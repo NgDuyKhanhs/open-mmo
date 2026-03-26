@@ -312,7 +312,6 @@ const displayNavItems = computed(() => {
 }
 
 .login-item {
-  color: #00f0ff;
   font-weight: 600;
 }
 
