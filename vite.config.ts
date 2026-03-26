@@ -14,5 +14,8 @@ export default defineConfig({
   },
   server: {
     allowedHosts: ['soila-semiproductive-unruinously.ngrok-free.dev', 'localhost', '127.0.0.1'],
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
   },
 })

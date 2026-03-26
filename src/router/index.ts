@@ -19,6 +19,7 @@ const IntroductionView = () => import('@/views/IntroductionView.vue')
 const ServicesView = () => import('@/views/ServicesView.vue')
 const ContactView = () => import('@/views/ContactView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
+const ProfileView = () => import('@/views/ProfileView.vue')
 const NotFoundView = () => import('@/views/NotFoundView.vue')
 
 /**
@@ -72,6 +73,16 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/profile',
+    name: 'profile',
+    component: ProfileView,
+    meta: {
+      title: 'Hồ Sơ Cá Nhân - OpenMMO',
+      description: 'Quản lý thông tin hồ sơ cá nhân của bạn',
+      requiresAuth: true,
+    },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: NotFoundView,
@@ -89,6 +100,33 @@ const router = createRouter({
     return { top: 0 }
   },
   routes,
+})
+
+/**
+ * Navigation guard to check authentication requirements
+ */
+router.beforeEach((to, _from, next) => {
+  // Dynamic import to avoid circular dependency
+  import('@/stores/useAuthStore').then(({ useAuthStore }) => {
+    const authStore = useAuthStore()
+
+    // Initialize auth state from localStorage on first load
+    if (!authStore.user && !authStore.accessToken) {
+      authStore.initializeAuth()
+    }
+
+    const requiresAuth = to.meta.requiresAuth ?? false
+
+    if (requiresAuth && !authStore.isLoggedIn) {
+      // Redirect to login if route requires auth and user is not logged in
+      next({ name: 'login' })
+    } else if (to.name === 'login' && authStore.isLoggedIn) {
+      // Redirect to profile if user tries to access login while logged in
+      next({ name: 'profile' })
+    } else {
+      next()
+    }
+  })
 })
 
 /**

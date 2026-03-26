@@ -3,8 +3,7 @@
 <template>
   <footer class="footer">
     <p>
-      © 2026 Open MMO. Design by
-      <a href="" target="_blank">Enzo</a>
+      .
     </p>
   </footer>
 </template>

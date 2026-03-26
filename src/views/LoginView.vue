@@ -1,17 +1,91 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/useAuthStore'
 
+interface GoogleCredentialResponse {
+  credential: string
+  select_by: string
+}
+
+interface GoogleIdentity {
+  accounts: {
+    id: {
+      initialize: (config: any) => void
+      renderButton: (element: HTMLElement, config: any) => void
+      cancel: () => void
+    }
+  }
+}
+
+declare const window: Window & { google: GoogleIdentity }
+
+const router = useRouter()
+const authStore = useAuthStore()
 const isLoading = ref(false)
+const googleButtonRef = ref<HTMLDivElement>()
 
-const handleGoogleLogin = async () => {
+// Initialize Google Sign-In button
+onMounted(() => {
+  if (!window.google) {
+    authStore.error = 'Error loading Google Sign-In script'
+    return
+  }
+
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+  if (!googleClientId || googleClientId.includes('TU_GOOGLE')) {
+    authStore.error = 'Google OAuth not configured. Please set VITE_GOOGLE_CLIENT_ID'
+    return
+  }
+
+  // Clear previous error when initializing
+  authStore.error = ''
+
+  window.google.accounts.id.initialize({
+    client_id: googleClientId,
+    callback: handleGoogleResponse,
+    auto_select: false,
+  })
+
+  if (googleButtonRef.value) {
+    window.google.accounts.id.renderButton(googleButtonRef.value, {
+      theme: 'outline',
+      size: 'large',
+      width: '100%',
+      locale: 'vi',
+    })
+  }
+})
+
+// Handle Google response
+const handleGoogleResponse = async (response: GoogleCredentialResponse) => {
   isLoading.value = true
-  // Simulate API call to Google login
-  setTimeout(() => {
-    console.log('Google login initiated')
-    // In a real app, you would call Google OAuth here
-    // window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?...'
+  try {
+    const { credential } = response
+    if (!credential) {
+      authStore.error = 'Failed to get credentials from Google'
+      return
+    }
+
+    // Use store's loginWithGoogle method which handles everything
+    const success = await authStore.loginWithGoogle({ idToken: credential })
+
+    if (success) {
+      // Login successful, redirect to profile
+      router.push('/profile')
+    }
+    // Error message is already set in the store
+  } catch (error) {
+    console.error('Google login error:', error)
+    authStore.error =
+      error instanceof Error ? error.message : 'An error occurred during Google login'
+  } finally {
     isLoading.value = false
-  }, 1000)
+  }
+}
+
+const goHome = () => {
+  router.push('/')
 }
 </script>
 
@@ -28,67 +102,29 @@ const handleGoogleLogin = async () => {
       <div class="login-card">
         <!-- Header -->
         <div class="login-header">
-          <p class="login-subtitle">Truy cập vào tài khoản của bạn</p>
+          <h1 class="login-title">OpenMMO</h1>
+          <p class="login-subtitle">Đăng nhập để tiếp tục</p>
         </div>
 
-        <!-- Google Login Button -->
+        <!-- Error Message -->
+        <div v-if="authStore.error" class="error-message">
+          <span class="error-icon">⚠️</span>
+          {{ authStore.error }}
+        </div>
+
+        <!-- Login Content -->
         <div class="login-content">
-          <button class="google-login-btn" @click="handleGoogleLogin" :disabled="isLoading">
-            <svg
-              class="google-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                fill="#4285F4"
-              />
-              <path
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                fill="#34A853"
-              />
-              <path
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                fill="#FBBC05"
-              />
-              <path
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                fill="#EA4335"
-              />
-            </svg>
-            <span v-if="!isLoading">Đăng nhập bằng Google</span>
-            <span v-else>Đang kết nối...</span>
-          </button>
-
-          <!-- Divider -->
-          <div class="divider">
-            <span>hoặc</span>
-          </div>
-
-          <!-- Info Text -->
-          <div class="login-info">
-            <p>Sử dụng tài khoản Google của bạn để đăng nhập nhanh chóng và an toàn</p>
-          </div>
+          <!-- Google Sign-In Button Container -->
+          <div ref="googleButtonRef" class="google-button-container"></div>
         </div>
 
         <!-- Footer -->
         <div class="login-footer">
-          <p class="terms-text">
-            Bằng cách đăng nhập, bạn đồng ý với
-            <a href="#" class="terms-link">Điều khoản dịch vụ</a>
-            và
-            <a href="#" class="terms-link">Chính sách bảo mật</a>
+          <p class="footer-text">
+            Quay lại
+            <button class="back-link" @click="goHome">Trang chủ</button>
           </p>
         </div>
-      </div>
-
-      <!-- Floating Cards -->
-      <div class="floating-card card-1">
-        <span class="card-icon">🔐</span>
-      </div>
-      <div class="floating-card card-2">
-        <span class="card-icon">💻</span>
       </div>
     </div>
   </div>
@@ -105,18 +141,13 @@ const handleGoogleLogin = async () => {
   left: 0;
   right: 0;
   overflow: hidden;
-  padding: 0;
+  padding: 20px;
   width: 100%;
+  background: linear-gradient(135deg, #0a0a12 0%, #1a1a2e 50%, #16213e 100%);
+  margin-top: 60px;
 }
 
-/* Background Grid */
 .login-background {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
   display: none;
 }
 
@@ -124,7 +155,6 @@ const handleGoogleLogin = async () => {
   display: none;
 }
 
-/* Login Container */
 .login-container {
   position: relative;
   z-index: 10;
@@ -132,7 +162,6 @@ const handleGoogleLogin = async () => {
   max-width: 420px;
 }
 
-/* Login Card */
 .login-card {
   background: linear-gradient(135deg, rgba(10, 10, 18, 0.95) 0%, rgba(10, 10, 18, 0.85) 100%);
   backdrop-filter: blur(20px);
@@ -155,7 +184,6 @@ const handleGoogleLogin = async () => {
   }
 }
 
-/* Header */
 .login-header {
   text-align: center;
   margin-bottom: 40px;
@@ -166,7 +194,11 @@ const handleGoogleLogin = async () => {
   font-size: 32px;
   font-weight: 700;
   margin-bottom: 10px;
-  color: var(--primary);
+  background: linear-gradient(135deg, #00f0ff 0%, #ffffff83 50%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 1px;
 }
 
 .login-subtitle {
@@ -176,12 +208,29 @@ const handleGoogleLogin = async () => {
   letter-spacing: 1px;
 }
 
-/* Content */
 .login-content {
   margin-bottom: 30px;
 }
 
-/* Google Login Button */
+.google-button-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.google-button-container :deep(.g_id_signin) {
+  width: 100% !important;
+}
+
+.google-button-container :deep(.g_id_signin > div) {
+  width: 100% !important;
+}
+
+.google-button-container :deep(.g_id_signin button) {
+  width: 100% !important;
+  margin: 0 auto !important;
+}
+
 .google-login-btn {
   width: 100%;
   padding: 16px;
@@ -233,91 +282,70 @@ const handleGoogleLogin = async () => {
   flex-shrink: 0;
 }
 
-/* Divider */
-.divider {
+.error-message {
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 24px 0;
-  color: rgba(255, 255, 255, 0.4);
   font-size: 13px;
+  color: #fca5a5;
+  animation: slideDown 0.3s ease-out;
 }
 
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.2), transparent);
+.error-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
-/* Info Text */
-.login-info {
-  text-align: center;
-  padding: 16px;
-  background: rgba(0, 240, 255, 0.05);
-  border: 1px solid rgba(0, 240, 255, 0.1);
-  border-radius: 12px;
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.login-info p {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.6;
-}
-
-/* Footer */
 .login-footer {
   text-align: center;
   padding-top: 24px;
   border-top: 1px solid rgba(0, 240, 255, 0.1);
 }
 
-.terms-text {
+.footer-text {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
 }
 
-.terms-link {
+.back-link {
+  background: none;
+  border: none;
   color: var(--primary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  padding: 0;
 }
 
-.terms-link:hover {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
-}
-
-/* Floating Cards */
-.floating-card {
-  position: absolute;
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, rgba(0, 240, 255, 0.1), rgba(255, 0, 212, 0.1));
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(0, 240, 255, 0.2);
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  opacity: 0;
-}
-
-.card-1 {
-  top: 20%;
-  left: 5%;
-}
-
-.card-2 {
-  bottom: 20%;
-  right: 5%;
+.back-link:hover {
+  color: #ffffff;
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {
+  .login-section {
+    padding: 15px;
+  }
+
   .login-card {
     padding: 30px 20px;
   }
@@ -325,9 +353,34 @@ const handleGoogleLogin = async () => {
   .login-title {
     font-size: 26px;
   }
+}
 
-  .floating-card {
-    display: none;
+@media (max-width: 480px) {
+  .login-card {
+    padding: 25px 15px;
+  }
+
+  .login-header {
+    margin-bottom: 30px;
+  }
+
+  .login-title {
+    font-size: 24px;
+  }
+
+  .login-subtitle {
+    font-size: 12px;
+  }
+
+  .google-login-btn {
+    padding: 14px 12px;
+    font-size: 14px;
+    gap: 10px;
+  }
+
+  .google-icon {
+    width: 18px;
+    height: 18px;
   }
 }
 </style>

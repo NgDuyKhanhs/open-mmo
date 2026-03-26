@@ -19,6 +19,7 @@ Modern portfolio web application built with Vue 3, Vite, and TypeScript for Open
 - **npm**: v10+ (comes with Node.js)
 
 Check your versions:
+
 ```bash
 node --version
 npm --version
@@ -27,17 +28,20 @@ npm --version
 ## 🚀 Quick Start
 
 ### 1. Clone the repository
+
 ```bash
 git clone https://github.com/NgDuyKhanhs/open-mmo.git
 cd FEOMMO
 ```
 
 ### 2. Install dependencies
+
 ```bash
 npm install
 ```
 
 ### 3. Start development server
+
 ```bash
 npm run dev
 ```
@@ -45,6 +49,7 @@ npm run dev
 The app will be available at: **http://localhost:5174**
 
 ### 4. Build for production
+
 ```bash
 npm run build
 ```
@@ -53,14 +58,14 @@ Production files will be in the `dist/` folder.
 
 ## 📚 Available Commands
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build locally |
-| `npm run type-check` | Run TypeScript type checking |
-| `npm run lint` | Run ESLint and Oxlint |
-| `npm run format` | Format code with Prettier |
+| Command              | Description                      |
+| -------------------- | -------------------------------- |
+| `npm run dev`        | Start development server         |
+| `npm run build`      | Build for production             |
+| `npm run preview`    | Preview production build locally |
+| `npm run type-check` | Run TypeScript type checking     |
+| `npm run lint`       | Run ESLint and Oxlint            |
+| `npm run format`     | Format code with Prettier        |
 
 ## 🏗️ Project Structure
 
@@ -93,24 +98,31 @@ src/
 ## 🎯 Key Features
 
 ### Configuration Management
+
 All hardcoded data is centralized in `src/config/`:
+
 - Navigation items
 - Chat bot responses
 - Services database (16 services categorized)
 
 ### Type-Safe State Management
+
 Pinia stores with full TypeScript support:
+
 - `useUIStore` - UI state (loading, mobile menu, theme)
 - `useChatStore` - Chat message history with conversation simulation
 - `useServicesStore` - Services with API integration ready
 
 ### Reusable Composables
+
 Extract component logic into library-grade composables:
+
 - Mouse tracking with 3D rotation
 - Scroll-triggered animations with IntersectionObserver
 - Animated counter values with easing functions
 
 ### Advanced Routing
+
 - Lazy-loaded route components (code-splitting)
 - Route metadata (title, description, requiresAuth)
 - Automatic document title updates
@@ -119,51 +131,58 @@ Extract component logic into library-grade composables:
 ## 🔧 Development Tips
 
 ### Add a new service
+
 Edit `src/config/services-config.ts`:
+
 ```typescript
 const SERVICES_CONFIG = {
-  earning: [
-    { id: 'new-service', label: 'My Service', icon: 'icon-name' }
-  ]
+  earning: [{ id: 'new-service', label: 'My Service', icon: 'icon-name' }],
 }
 ```
 
 ### Create a new store
+
 Use Pinia setup pattern in `src/stores/`:
+
 ```typescript
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 export const useMyStore = defineStore('my', () => {
   const state = ref(initialValue)
-  
+
   const action = () => {
     // do something
   }
-  
+
   return { state, action }
 })
 ```
 
 ### Create a reusable composable
+
 Add to `src/composables/`:
+
 ```typescript
 export const useMyComposable = () => {
   onMounted(() => {
     // setup
   })
-  
+
   onUnmounted(() => {
     // cleanup
   })
-  
-  return { /* expose API */ }
+
+  return {
+    /* expose API */
+  }
 }
 ```
 
 ## 🐛 Environment Setup
 
 For additional configuration (API endpoints, auth keys, etc.), create `.env.local`:
+
 ```bash
 VITE_API_URL=https://your-api.com
 VITE_AUTH_KEY=your-key
@@ -174,16 +193,19 @@ VITE_AUTH_KEY=your-key
 ## 📦 Dependencies
 
 ### Core
+
 - **vue** - Vue 3 framework
 - **vue-router** - v5 client-side routing
 - **pinia** - State management
 
 ### Styling
+
 - **tailwindcss** - Utility-first CSS
 - **postcss** - CSS transformation pipeline
 - **autoprefixer** - Browser compatibility
 
 ### Build & Development
+
 - **vite** - Next-generation frontend tooling
 - **typescript** - Type safety
 - **eslint** - Code quality
@@ -213,22 +235,29 @@ This project is part of the OpenMMO platform.
 ## ⚠️ Troubleshooting
 
 ### "npm: command not found"
+
 Install Node.js from https://nodejs.org/ (v20.19.0 or v22.12.0+)
 
 ### Port 5174 already in use
+
 The dev server will automatically try the next available port, or specify:
+
 ```bash
 npm run dev -- --port 3000
 ```
 
 ### TypeScript errors in IDE
+
 Run type checking:
+
 ```bash
 npm run type-check
 ```
 
 ### Build fails
+
 Clear cache and rebuild:
+
 ```bash
 rm -rf dist node_modules package-lock.json
 npm install
