@@ -35,7 +35,7 @@ const routes: RouteRecordRaw[] = [
     name: 'introduction',
     component: IntroductionView,
     meta: {
-      title: 'Giới Thiệu - OpenMMO | Kiếm Tiền Online',
+      title: 'Giới Thiệu - OpenMMO.ai — Turn ideas into digital businesses with AI',
       description:
         'Khám phá OpenMMO - Nền tảng toàn diện để kiếm tiền online với đào tạo, công cụ và hỗ trợ 24/7',
       requiresAuth: false,
@@ -46,7 +46,7 @@ const routes: RouteRecordRaw[] = [
     name: 'services',
     component: ServicesView,
     meta: {
-      title: 'Dịch Vụ - OpenMMO | Kiếm Tiền, Kỹ Năng, Công Cụ',
+      title: 'Dịch Vụ - OpenMMO.ai — Turn ideas into digital businesses with AI',
       description:
         'Khám phá các dịch vụ của OpenMMO: kiếm tiền, kỹ năng, công cụ và hỗ trợ để phát triển sự nghiệp',
       requiresAuth: false,
@@ -57,7 +57,7 @@ const routes: RouteRecordRaw[] = [
     name: 'contact',
     component: ContactView,
     meta: {
-      title: 'Liên Hệ - OpenMMO',
+      title: 'Liên Hệ - OpenMMO.ai — Turn ideas into digital businesses with AI',
       description: 'Liên hệ với đội ngũ OpenMMO để nhận hỗ trợ và tư vấn',
       requiresAuth: false,
     },
@@ -67,7 +67,7 @@ const routes: RouteRecordRaw[] = [
     name: 'login',
     component: LoginView,
     meta: {
-      title: 'Đăng Nhập - OpenMMO',
+      title: 'Đăng Nhập - OpenMMO.ai — Turn ideas into digital businesses with AI',
       description: 'Đăng nhập vào tài khoản OpenMMO của bạn',
       requiresAuth: false,
     },
@@ -77,7 +77,7 @@ const routes: RouteRecordRaw[] = [
     name: 'profile',
     component: ProfileView,
     meta: {
-      title: 'Hồ Sơ Cá Nhân - OpenMMO',
+      title: 'Hồ Sơ Cá Nhân - OpenMMO.ai — Turn ideas into digital businesses with AI',
       description: 'Quản lý thông tin hồ sơ cá nhân của bạn',
       requiresAuth: true,
     },

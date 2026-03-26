@@ -30,8 +30,7 @@ onMounted(() => {
         <span class="intro-badge">Thành Lập 2026</span>
         <h1 class="intro-headline"><br /><span>OpenMMO</span></h1>
         <p class="intro-subtext">
-          Biến những ý tưởng sáng tạo thành hiện thực kỹ thuật số mạnh mẽ thông qua công nghệ tiên
-          tiến và sự xuất sắc sáng tạo.
+        Turn ideas into digital businesses with AI
         </p>
         <div class="intro-cta-group">
           <button class="intro-cta-primary">Khám Phá Dự Án</button>
