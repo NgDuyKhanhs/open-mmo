@@ -14,7 +14,7 @@ if (!authStore.isLoggedIn) {
 
 // Format date
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('vi-VN', {
+  return new Date(dateString).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -86,63 +86,60 @@ const handleAvatarError = () => {
               <div class="display-name">{{ displayName }}</div>
             </div>
           </div>
-        
         </section>
 
         <section class="panel details">
           <div class="info-grid">
             <div class="info-card">
-              <p class="label">Tên đăng nhập</p>
+              <p class="label">Username</p>
               <p class="value">{{ authStore.user?.username }}</p>
             </div>
 
             <div class="info-card">
               <p class="label">Email</p>
-              <p class="value">{{ authStore.user?.email || 'Chưa cập nhật' }}</p>
+              <p class="value">{{ authStore.user?.email || 'Not updated' }}</p>
             </div>
 
             <div class="info-card">
-              <p class="label">Trạng thái email</p>
+              <p class="label">Email status</p>
               <p class="value">
                 <span class="chip" :class="{ positive: authStore.user?.emailVerified }">
-                  {{ authStore.user?.emailVerified ? 'Đã xác thực' : 'Chưa xác thực' }}
+                  {{ authStore.user?.emailVerified ? 'Verified' : 'Unverified' }}
                 </span>
               </p>
             </div>
 
             <div class="info-card">
-              <p class="label">Trạng thái tài khoản</p>
+              <p class="label">Account status</p>
               <p class="value">
                 <span class="chip" :class="{ positive: authStore.user?.isActive }">
-                  {{ authStore.user?.isActive ? 'Hoạt động' : 'Tạm khóa' }}
+                  {{ authStore.user?.isActive ? 'Active' : 'Suspended' }}
                 </span>
               </p>
             </div>
 
             <div class="info-card span-2">
-              <p class="label">Quyền hạn</p>
+              <p class="label">Roles</p>
               <div class="roles">
                 <span v-for="role in authStore.user?.roles" :key="role" class="role-badge">{{
                   role
                 }}</span>
                 <span v-if="!authStore.user?.roles?.length" class="role-badge muted"
-                  >Chưa phân quyền</span
+                  >No roles assigned</span
                 >
               </div>
             </div>
 
             <div class="info-card">
-              <p class="label">Ngày tạo tài khoản</p>
+              <p class="label">Account created</p>
               <p class="value">{{ formatDate(authStore.user?.createdAt || '') }}</p>
             </div>
 
             <div class="info-card">
-              <p class="label">Lần đăng nhập cuối</p>
+              <p class="label">Last login</p>
               <p class="value">
                 {{
-                  authStore.user?.lastLoginAt
-                    ? formatDate(authStore.user.lastLoginAt)
-                    : 'Chưa ghi nhận'
+                  authStore.user?.lastLoginAt ? formatDate(authStore.user.lastLoginAt) : 'No record'
                 }}
               </p>
             </div>

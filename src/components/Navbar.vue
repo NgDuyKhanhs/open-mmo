@@ -79,7 +79,7 @@ const displayNavItems = computed(() => {
     <div class="navbar-container">
       <!-- Logo -->
       <div class="navbar-logo" @click="goHome">
-        <span class="navbar-brand">OpenMMO</span>
+        <img src="@/assets/navbar-logo.png" alt="OpenMMO" class="navbar-logo-image" />
       </div>
 
       <!-- Hamburger Menu -->
@@ -111,7 +111,7 @@ const displayNavItems = computed(() => {
                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"
               />
             </svg>
-            <span class="nav-title">Hồ Sơ</span>
+            <span class="nav-title">Profile</span>
           </button>
           <button class="navbar-item logout-item-mobile" @click="handleLogout">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -122,7 +122,7 @@ const displayNavItems = computed(() => {
                 stroke-linejoin="round"
               />
             </svg>
-            <span class="nav-title">Đăng Xuất</span>
+            <span class="nav-title">Log Out</span>
           </button>
         </div>
 
@@ -134,7 +134,7 @@ const displayNavItems = computed(() => {
           :class="{ active: isActive('/login') }"
           @click.prevent="navigate('/login')"
         >
-          <span class="nav-title">Đăng Nhập</span>
+          <span class="nav-title">Log In</span>
         </a>
       </div>
 
@@ -175,7 +175,7 @@ const displayNavItems = computed(() => {
                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"
               />
             </svg>
-            Hồ Sơ Cá Nhân
+            My Profile
           </button>
 
           <div class="menu-divider"></div>
@@ -189,7 +189,7 @@ const displayNavItems = computed(() => {
                 stroke-linejoin="round"
               />
             </svg>
-            Đăng Xuất
+            Log Out
           </button>
         </div>
       </div>
@@ -228,27 +228,26 @@ const displayNavItems = computed(() => {
 .navbar-logo {
   display: flex;
   align-items: center;
-  gap: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
-  white-space: nowrap;
   flex-shrink: 0;
   z-index: 101;
+  width: 200px;
+  height: 38px;
+  overflow: hidden;
+  border-radius: 10px;
 }
 
 .navbar-logo:hover {
-  transform: scale(1.05);
+  transform: translateY(-1px) scale(1.02);
 }
 
-.navbar-brand {
-  font-family: 'Comfortaa', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--primary) 0%, #ffffff83 50%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: 1px;
+.navbar-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.22));
 }
 
 .navbar-menu {
@@ -501,9 +500,9 @@ const displayNavItems = computed(() => {
     padding: 13px 16px;
   }
 
-  .navbar-brand {
-    display: inline;
-    font-size: 15px;
+  .navbar-logo {
+    width: 118px;
+    height: 34px;
   }
 
   .navbar-menu {
@@ -553,8 +552,9 @@ const displayNavItems = computed(() => {
     display: flex;
   }
 
-  .navbar-brand {
-    display: none;
+  .navbar-logo {
+    width: 108px;
+    height: 32px;
   }
 
   .navbar-item {

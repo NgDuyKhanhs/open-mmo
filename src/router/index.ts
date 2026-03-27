@@ -35,9 +35,9 @@ const routes: RouteRecordRaw[] = [
     name: 'introduction',
     component: IntroductionView,
     meta: {
-      title: 'Giới Thiệu - OpenMMO.ai — Turn ideas into digital businesses with AI',
+      title: 'Introduction - OpenMMO.ai - Turn ideas into digital businesses with AI',
       description:
-        'Khám phá OpenMMO - Nền tảng toàn diện để kiếm tiền online với đào tạo, công cụ và hỗ trợ 24/7',
+        'Explore OpenMMO - A complete platform for online monetization with training, tools, and 24/7 support.',
       requiresAuth: false,
     },
   },
@@ -46,9 +46,9 @@ const routes: RouteRecordRaw[] = [
     name: 'services',
     component: ServicesView,
     meta: {
-      title: 'Dịch Vụ - OpenMMO.ai — Turn ideas into digital businesses with AI',
+      title: 'Services - OpenMMO.ai - Turn ideas into digital businesses with AI',
       description:
-        'Khám phá các dịch vụ của OpenMMO: kiếm tiền, kỹ năng, công cụ và hỗ trợ để phát triển sự nghiệp',
+        'Discover OpenMMO services: monetization, skills, tools, and support to grow your career.',
       requiresAuth: false,
     },
   },
@@ -57,8 +57,8 @@ const routes: RouteRecordRaw[] = [
     name: 'contact',
     component: ContactView,
     meta: {
-      title: 'Liên Hệ - OpenMMO.ai — Turn ideas into digital businesses with AI',
-      description: 'Liên hệ với đội ngũ OpenMMO để nhận hỗ trợ và tư vấn',
+      title: 'Contact - OpenMMO.ai - Turn ideas into digital businesses with AI',
+      description: 'Contact the OpenMMO team for support and consulting.',
       requiresAuth: false,
     },
   },
@@ -67,8 +67,8 @@ const routes: RouteRecordRaw[] = [
     name: 'login',
     component: LoginView,
     meta: {
-      title: 'Đăng Nhập - OpenMMO.ai — Turn ideas into digital businesses with AI',
-      description: 'Đăng nhập vào tài khoản OpenMMO của bạn',
+      title: 'Log In - OpenMMO.ai - Turn ideas into digital businesses with AI',
+      description: 'Sign in to your OpenMMO account.',
       requiresAuth: false,
     },
   },
@@ -77,8 +77,8 @@ const routes: RouteRecordRaw[] = [
     name: 'profile',
     component: ProfileView,
     meta: {
-      title: 'Hồ Sơ Cá Nhân - OpenMMO.ai — Turn ideas into digital businesses with AI',
-      description: 'Quản lý thông tin hồ sơ cá nhân của bạn',
+      title: 'My Profile - OpenMMO.ai - Turn ideas into digital businesses with AI',
+      description: 'Manage your personal profile details.',
       requiresAuth: true,
     },
   },
@@ -87,8 +87,8 @@ const routes: RouteRecordRaw[] = [
     name: 'not-found',
     component: NotFoundView,
     meta: {
-      title: '404 - Trang Không Tìm Thấy',
-      description: 'Trang bạn tìm kiếm không tồn tại',
+      title: '404 - Page Not Found',
+      description: 'The page you are looking for does not exist.',
       requiresAuth: false,
     },
   },
@@ -133,9 +133,9 @@ router.beforeEach((to, _from, next) => {
  * Update document title and meta tags after each route navigation
  */
 router.afterEach((to) => {
-  const title = (to.meta.title as string) || 'OpenMMO - Kiếm Tiền Online'
+  const title = (to.meta.title as string) || 'OpenMMO - Online Monetization'
   const description =
-    (to.meta.description as string) || 'OpenMMO - Nền tảng toàn diện để kiếm tiền online'
+    (to.meta.description as string) || 'OpenMMO - A complete platform for online monetization'
 
   // Update page title
   document.title = title

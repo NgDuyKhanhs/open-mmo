@@ -52,7 +52,7 @@ onMounted(() => {
       theme: 'outline',
       size: 'large',
       width: '100%',
-      locale: 'vi',
+      locale: 'en',
     })
   }
 })
@@ -103,7 +103,7 @@ const goHome = () => {
         <!-- Header -->
         <div class="login-header">
           <h1 class="login-title">OpenMMO</h1>
-          <p class="login-subtitle">Đăng nhập để tiếp tục</p>
+          <p class="login-subtitle">Sign in to continue</p>
         </div>
 
         <!-- Error Message -->
@@ -121,8 +121,8 @@ const goHome = () => {
         <!-- Footer -->
         <div class="login-footer">
           <p class="footer-text">
-            Quay lại
-            <button class="back-link" @click="goHome">Trang chủ</button>
+            Back to
+            <button class="back-link" @click="goHome">Home</button>
           </p>
         </div>
       </div>

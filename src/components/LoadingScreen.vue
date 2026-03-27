@@ -11,7 +11,7 @@ withDefaults(defineProps<Props>(), {
 <template>
   <div v-if="visible" class="loading-screen">
     <div class="loader-ring"></div>
-    <div class="loading-text">Đang tải</div>
+    <div class="loading-text">Loading</div>
   </div>
 </template>
 
@@ -87,4 +87,3 @@ withDefaults(defineProps<Props>(), {
   }
 }
 </style>
-

@@ -27,14 +27,21 @@ onMounted(() => {
     <!-- Hero Banner -->
     <div class="intro-hero">
       <div class="intro-hero-content">
-        <span class="intro-badge">Thành Lập 2026</span>
         <h1 class="intro-headline"><br /><span>OpenMMO</span></h1>
-        <p class="intro-subtext">
-        Turn ideas into digital businesses with AI
-        </p>
+        <p class="intro-subtext">Turn ideas into digital businesses with AI</p>
         <div class="intro-cta-group">
-          <button class="intro-cta-primary">Khám Phá Dự Án</button>
-          <button class="intro-cta-secondary">Xem Giới Thiệu</button>
+          <button class="intro-cta intro-cta-primary">
+            <span class="cta-text">Selling Through Email with AI</span>
+            <span class="cta-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="intro-cta intro-cta-secondary">
+            <span class="cta-text">SEO with AI</span>
+            <span class="cta-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="intro-cta intro-cta-secondary">
+            <span class="cta-text">Create a Website with AI</span>
+            <span class="cta-arrow" aria-hidden="true">→</span>
+          </button>
         </div>
       </div>
       <div class="intro-hero-visual" ref="phoneContainer">
@@ -45,7 +52,7 @@ onMounted(() => {
           }"
         >
           <div class="phone-mockup">
-            <img src="@/assets/phone-mockup.png" alt="OpenMMO Mobile" class="phone-image" />
+            <img src="@/assets/hero-phone.png" alt="OpenMMO Mobile" class="phone-image" />
           </div>
         </div>
       </div>
@@ -55,23 +62,23 @@ onMounted(() => {
     <div class="intro-metrics scroll-reveal">
       <div class="metric-item">
         <span class="metric-value">{{ animatedValues[0] }}</span>
-        <span class="metric-label">Dự Án Hoàn Thành</span>
+        <span class="metric-label">Completed Projects</span>
       </div>
       <div class="metric-divider"></div>
       <div class="metric-item">
         <span class="metric-value">{{ animatedValues[1] }}</span>
         <span class="metric-suffix">%</span>
-        <span class="metric-label">Tỷ Lệ Giữ Chân Khách</span>
+        <span class="metric-label">Client Retention Rate</span>
       </div>
       <div class="metric-divider"></div>
       <div class="metric-item">
         <span class="metric-value">{{ animatedValues[2] }}</span>
-        <span class="metric-label">Giải Thưởng Ngành</span>
+        <span class="metric-label">Industry Awards</span>
       </div>
       <div class="metric-divider"></div>
       <div class="metric-item">
         <span class="metric-value">24/7</span>
-        <span class="metric-label">Hỗ Trợ Toàn Cầu</span>
+        <span class="metric-label">Global Support</span>
       </div>
     </div>
 
@@ -84,7 +91,7 @@ onMounted(() => {
 
     <!-- Tech Stack Preview -->
     <div class="intro-tech scroll-reveal">
-      <p class="tech-label">Công Nghệ Chúng Tôi Sử Dụng</p>
+      <p class="tech-label">Technologies We Use</p>
       <div class="tech-marquee">
         <div class="tech-track">
           <span class="tech-item">Vue.js</span>
@@ -185,45 +192,121 @@ onMounted(() => {
 }
 
 .intro-cta-group {
-  display: flex;
-  gap: 18px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+  max-width: 520px;
 }
 
-.intro-cta-primary,
-.intro-cta-secondary {
-  padding: 16px 36px;
-  background: var(--glass-bg);
+.intro-cta {
+  appearance: none;
+  border: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 18px;
+  background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-radius: 50px;
+  border-radius: 999px;
   font-family: 'Comfortaa', sans-serif;
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0.8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.45px;
+  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.35s ease;
+  user-select: none;
+  transition:
+    transform 0.22s ease,
+    background 0.22s ease,
+    border-color 0.28s ease,
+    box-shadow 0.22s ease;
+  overflow: hidden;
 }
 
-.intro-cta-primary {
-  border: 1px solid var(--primary);
-  color: var(--primary);
+.intro-cta::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
 }
 
-.intro-cta-primary:hover {
-  background: rgba(0, 240, 255, 0.15);
-  box-shadow: 0 0 25px rgba(0, 200, 220, 0.3);
+.intro-cta:hover {
   transform: translateY(-2px);
 }
 
+.intro-cta:active {
+  transform: translateY(0);
+}
+
+.intro-cta:focus-visible {
+  outline: 2px solid rgba(0, 240, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.intro-cta-primary {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(0, 255, 170, 0.72);
+  background: linear-gradient(135deg, rgba(0, 255, 191, 0.24), rgba(0, 240, 255, 0.1));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 26px rgba(0, 200, 220, 0.3);
+}
+
+.intro-cta-primary .cta-text {
+  color: #ebffff;
+}
+
+.intro-cta-primary:hover {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.3), rgba(0, 240, 255, 0.12));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 14px 30px rgba(0, 200, 220, 0.35);
+}
+
 .intro-cta-secondary {
-  border: 1px solid var(--glass-border);
-  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.22);
 }
 
 .intro-cta-secondary:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #ffffff;
+  border-color: rgba(0, 240, 255, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 22px rgba(0, 0, 0, 0.28);
+}
+
+.cta-text {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.cta-arrow {
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.8;
+  transform: translateX(0);
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.intro-cta:hover .cta-arrow {
+  opacity: 1;
+  transform: translateX(2px);
 }
 
 /* Hero Visual - Phone Mockup */
@@ -473,7 +556,7 @@ onMounted(() => {
   }
 
   .intro-cta-group {
-    justify-content: center;
+    margin: 0 auto;
   }
 
   .intro-hero-visual {
@@ -545,16 +628,22 @@ onMounted(() => {
   }
 
   .intro-cta-group {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
-  .intro-cta-primary,
-  .intro-cta-secondary {
+  .intro-cta-primary {
+    grid-column: auto;
+  }
+
+  .intro-cta {
     width: 100%;
-    padding: 14px 24px;
-    font-size: 14px;
+    min-height: 50px;
+    padding: 0 16px;
+  }
+
+  .cta-text {
+    font-size: 12px;
   }
 
   .intro-metrics {

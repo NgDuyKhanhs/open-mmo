@@ -13,26 +13,26 @@ export interface NavItem {
 export const NAVIGATION_CONFIG: NavItem[] = [
   {
     id: 1,
-    badge: 'TG',
-    title: 'Giới Thiệu',
+    badge: 'IN',
+    title: 'Introduction',
     path: '/introduction',
   },
   {
     id: 2,
-    badge: 'DV',
-    title: 'Dịch Vụ',
+    badge: 'SV',
+    title: 'Services',
     path: '/services',
   },
   {
     id: 3,
-    badge: 'LH',
-    title: 'Liên Hệ',
+    badge: 'CT',
+    title: 'Contact',
     path: '/contact',
   },
   {
     id: 4,
-    badge: 'DN',
-    title: 'Đăng Nhập',
+    badge: 'LI',
+    title: 'Log In',
     path: '/login',
   },
 ]

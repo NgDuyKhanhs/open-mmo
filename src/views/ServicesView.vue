@@ -5,10 +5,10 @@ import { SERVICES_CONFIG } from '@/config'
 const activeTab = ref('earning')
 
 const tabs = [
-  { id: 'earning', name: 'Kiếm Tiền' },
-  { id: 'skills', name: 'Kỹ Năng' },
-  { id: 'tools', name: 'Công Cụ' },
-  { id: 'support', name: 'Hỗ Trợ' },
+  { id: 'earning', name: 'Monetization' },
+  { id: 'skills', name: 'Skills' },
+  { id: 'tools', name: 'Tools' },
+  { id: 'support', name: 'Support' },
 ]
 
 const services = SERVICES_CONFIG
@@ -33,7 +33,7 @@ const switchTab = (tabId: string) => {
       </div>
 
       <div class="tab-content">
-        <!-- Kiếm Tiền Tab -->
+        <!-- Monetization Tab -->
         <div v-if="activeTab === 'earning'" class="tab-pane active service-pane">
           <div class="services-list">
             <div v-for="(service, idx) in services.earning" :key="idx" class="service-card">
@@ -42,7 +42,7 @@ const switchTab = (tabId: string) => {
                 <h4 class="service-title">{{ service.title }}</h4>
                 <p class="service-desc">{{ service.desc }}</p>
                 <div class="service-meta">
-                  <span class="meta-label">Thu nhập:</span>
+                  <span class="meta-label">Revenue:</span>
                   <span class="meta-value">{{ service.revenue }}</span>
                 </div>
               </div>
@@ -51,7 +51,7 @@ const switchTab = (tabId: string) => {
           </div>
         </div>
 
-        <!-- Kỹ Năng Tab -->
+        <!-- Skills Tab -->
         <div v-if="activeTab === 'skills'" class="tab-pane active service-pane">
           <div class="services-list">
             <div v-for="(service, idx) in services.skills" :key="idx" class="service-card">
@@ -60,7 +60,7 @@ const switchTab = (tabId: string) => {
                 <h4 class="service-title">{{ service.title }}</h4>
                 <p class="service-desc">{{ service.desc }}</p>
                 <div class="service-meta">
-                  <span class="meta-label">Cấp độ:</span>
+                  <span class="meta-label">Level:</span>
                   <span class="meta-value">{{ service.level }}</span>
                 </div>
               </div>
@@ -69,7 +69,7 @@ const switchTab = (tabId: string) => {
           </div>
         </div>
 
-        <!-- Công Cụ Tab -->
+        <!-- Tools Tab -->
         <div v-if="activeTab === 'tools'" class="tab-pane active service-pane">
           <div class="services-list">
             <div v-for="(service, idx) in services.tools" :key="idx" class="service-card">
@@ -78,7 +78,7 @@ const switchTab = (tabId: string) => {
                 <h4 class="service-title">{{ service.title }}</h4>
                 <p class="service-desc">{{ service.desc }}</p>
                 <div class="service-meta">
-                  <span class="meta-label">Dùng cho:</span>
+                  <span class="meta-label">Best for:</span>
                   <span class="meta-value">{{ service.use }}</span>
                 </div>
               </div>
@@ -87,7 +87,7 @@ const switchTab = (tabId: string) => {
           </div>
         </div>
 
-        <!-- Hỗ Trợ Tab -->
+        <!-- Support Tab -->
         <div v-if="activeTab === 'support'" class="tab-pane active service-pane">
           <div class="services-list">
             <div v-for="(service, idx) in services.support" :key="idx" class="service-card">

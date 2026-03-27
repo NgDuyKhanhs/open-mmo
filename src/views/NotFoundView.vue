@@ -12,9 +12,11 @@ const goHome = () => {
   <div class="not-found-container">
     <div class="not-found-content">
       <h1 class="error-code">404</h1>
-      <h2 class="error-title">Trang Không Tìm Thấy</h2>
-      <p class="error-description">Xin lỗi, trang bạn tìm kiếm không tồn tại hoặc đã bị xóa.</p>
-      <button class="back-button" @click="goHome">Quay Lại Trang Chủ</button>
+      <h2 class="error-title">Page Not Found</h2>
+      <p class="error-description">
+        Sorry, the page you are looking for does not exist or has been removed.
+      </p>
+      <button class="back-button" @click="goHome">Back to Home</button>
     </div>
   </div>
 </template>

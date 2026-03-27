@@ -4,17 +4,17 @@
  */
 
 export const BOT_RESPONSES = [
-  'Tôi rất vui được giúp bạn! Bạn cần tư vấn gì?',
-  'Chúng tôi chuyên tạo những trải nghiệm kỹ thuật số tuyệt vời. Bạn có dự án nào không?',
-  'Bạn muốn biết thêm về dịch vụ của chúng tôi không? Hãy khám phá danh mục của bạn!',
-  'Đội ngũ bạn kết hợp sự đổi mới với thiết kế lấy con người làm trung tâm. Chúng tôi có thể giúp gì?',
-  'Tôi có thể giúp bạn với thông tin về dịch vụ, danh mục và đội ngũ của chúng tôi.',
+  'I am happy to help. What would you like advice on?',
+  'We build outstanding digital experiences. Do you have a project in mind?',
+  'Would you like to learn more about our services? Explore your options with us.',
+  'Our team combines innovation with human-centered design. How can we support you?',
+  'I can help with information about our services, portfolio, and team.',
 ]
 
 export const CHAT_CONFIG = {
-  initialMessage: 'Tôi có thể giúp gì cho bạn hôm nay ?',
-  placeholder: 'Nhập tin nhắn của bạn...',
-  header: 'Bot',
+  initialMessage: 'How can I help you today?',
+  placeholder: 'Type your message...',
+  header: 'Assistant',
   responseDelay: 600, // milliseconds
 }
 

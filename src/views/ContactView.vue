@@ -30,7 +30,7 @@ const contactInfo = [
   {
     id: 1,
     icon: '📍',
-    title: 'Địa Chỉ',
+    title: 'Address',
     content: 'TC3 Vinhomes Smart City',
   },
   {
@@ -42,7 +42,7 @@ const contactInfo = [
   {
     id: 3,
     icon: '📞',
-    title: 'Điện Thoại',
+    title: 'Phone',
     content: '+84 000000000',
   },
 ]
