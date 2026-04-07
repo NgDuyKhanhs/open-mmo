@@ -1,0 +1,41 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+dist
+.env
+.env.local
+.DS_Store
+.vscode
+.idea
+*.iml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Build artifacts
+target/
+build/
+dist/
+.nuxt/
+

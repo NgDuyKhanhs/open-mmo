@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: openmmo-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: openmmo
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    ports:
+      - "27017:27017"
+    networks:
+      - openmmo-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: openmmo-backend
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      # MongoDB Configuration
+      MONGODB_URI: mongodb://mongodb:27017/openmmo
+      MONGODB_DATABASE: openmmo
+
+      # Server Configuration
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: docker
+
+      # JWT Configuration - REQUIRED: Set in .env file!
+      JWT_SECRET: ${JWT_SECRET:}
+
+      # OAuth2 Google Configuration - REQUIRED: Set these values!
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/google-callback}
+
+      # CORS Configuration
+      CORS_ORIGINS: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:80}
+
+      # Application URLs
+      APP_WEB_URL: ${APP_WEB_URL:http://localhost}
+
+      # Gmail OAuth Configuration
+      GMAIL_OAUTH_REDIRECT_URI: ${GMAIL_OAUTH_REDIRECT_URI:http://localhost:8080/api/v1/gmail/connect/callback}
+
+      # Token Encryption - REQUIRED: Set this value!
+      TOKEN_ENC_KEY_BASE64: ${TOKEN_ENC_KEY_BASE64:}
+
+      # API Keys - REQUIRED: Set these if using them!
+      OPENAI_API_KEY: ${OPENAI_API_KEY:}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:}
+
+      # Java Options
+      JAVA_OPTS: -Xmx512m -Xms256m
+    ports:
+      - "8080:8080"
+    networks:
+      - openmmo-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend Web Server
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: openmmo-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # These can be set during build time
+      VITE_API_URL: ${VITE_API_URL:http://localhost/api}
+      VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:}
+    ports:
+      - "80:80"
+    networks:
+      - openmmo-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+
+networks:
+  openmmo-network:
+    driver: bridge
+
+

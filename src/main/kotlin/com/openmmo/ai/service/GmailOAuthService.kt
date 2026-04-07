@@ -5,11 +5,13 @@ import com.openmmo.ai.entity.GmailBotConfig
 import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.util.EncryptionUtil
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 import java.security.SecureRandom
 import java.util.Base64
@@ -32,9 +34,15 @@ class GmailOAuthService(
         private const val GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
         private const val GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
         private const val GMAIL_PROFILE_URL = "https://www.googleapis.com/gmail/v1/users/me/profile"
+        private val logger = LoggerFactory.getLogger(GmailOAuthService::class.java)
     }
 
     fun generateAuthUrl(userId: String): String {
+        // Validate client ID is configured
+        if (clientId.isBlank()) {
+            throw IllegalStateException("GOOGLE_CLIENT_ID not configured. Please set the GOOGLE_CLIENT_ID environment variable.")
+        }
+
         val state = generateState(userId)
 
         // Get user email to suggest in Google login
@@ -110,15 +118,32 @@ class GmailOAuthService(
     }
 
     fun refreshAccessToken(refreshToken: String): String {
-        val body = mapOf(
-            "client_id" to clientId,
-            "client_secret" to clientSecret,
-            "refresh_token" to refreshToken,
-            "grant_type" to "refresh_token"
-        )
+        try {
+            logger.debug("Attempting to refresh Gmail access token")
+            val body = mapOf(
+                "client_id" to clientId,
+                "client_secret" to clientSecret,
+                "refresh_token" to refreshToken,
+                "grant_type" to "refresh_token"
+            )
 
-        val response = restTemplate.postForObject(GOOGLE_TOKEN_URL, body, Map::class.java)
-        return response?.get("access_token") as? String ?: throw IllegalStateException("Failed to refresh token")
+            val response = restTemplate.postForObject(GOOGLE_TOKEN_URL, body, Map::class.java)
+            val accessToken = response?.get("access_token") as? String
+
+            if (accessToken == null) {
+                logger.error("Failed to get access token from Google response")
+                throw IllegalStateException("Failed to refresh token - no access token in response")
+            }
+
+            logger.debug("Gmail access token refreshed successfully")
+            return accessToken
+        } catch (e: HttpClientErrorException) {
+            logger.error("HTTP error refreshing Gmail token: ${e.statusCode} - ${e.responseBodyAsString}")
+            throw IllegalStateException("Failed to refresh Gmail token: ${e.statusCode} - ${e.responseBodyAsString}")
+        } catch (e: Exception) {
+            logger.error("Error refreshing Gmail token", e)
+            throw IllegalStateException("Failed to refresh Gmail token: ${e.message}")
+        }
     }
 
     private fun exchangeCodeForTokens(code: String): Map<*, *> {

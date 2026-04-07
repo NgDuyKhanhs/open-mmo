@@ -1,7 +1,6 @@
 package com.openmmo.ai.service
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.openmmo.ai.dto.*
@@ -10,6 +9,7 @@ import com.openmmo.ai.repository.UserRepository
 import com.openmmo.ai.util.JwtTokenProvider
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
+import org.springframework.beans.factory.annotation.Value
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.util.*
@@ -22,19 +22,29 @@ import java.util.*
 class AuthenticationService(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val jwtTokenProvider: JwtTokenProvider
+    private val jwtTokenProvider: JwtTokenProvider,
+    @Value("\${oauth2.google.client-id}") private val googleClientId: String
 ) {
 
     private val logger = LoggerFactory.getLogger(AuthenticationService::class.java)
     
-    // Google OAuth Configuration
-    private companion object {
-        const val GOOGLE_CLIENT_ID = "779295627515-28h679li4r6e3mkjn5hspm7g7nqatjre.apps.googleusercontent.com"
-        val GOOGLE_ID_TOKEN_VERIFIER: GoogleIdTokenVerifier = GoogleIdTokenVerifier.Builder(
-            NetHttpTransport(),
-            GsonFactory()
-        ).setAudience(Collections.singletonList(GOOGLE_CLIENT_ID)).build()
-    }
+    // Google OAuth Configuration - Built lazily
+    private val GOOGLE_ID_TOKEN_VERIFIER: GoogleIdTokenVerifier?
+        get() {
+            if (googleClientId.isBlank()) {
+                logger.error("GOOGLE_CLIENT_ID is not configured. Please set the GOOGLE_CLIENT_ID environment variable.")
+                return null
+            }
+            return try {
+                GoogleIdTokenVerifier.Builder(
+                    NetHttpTransport(),
+                    GsonFactory()
+                ).setAudience(Collections.singletonList(googleClientId)).build()
+            } catch (ex: Exception) {
+                logger.error("Failed to initialize Google ID Token Verifier", ex)
+                null
+            }
+        }
 
     /**
      * Register new user with email and password
@@ -205,13 +215,31 @@ class AuthenticationService(
         try {
             logger.info("Processing Google login with token")
             
-            // Verify Google ID Token using Google's official verifier
-            val idToken = GOOGLE_ID_TOKEN_VERIFIER.verify(request.idToken)
-            if (idToken == null) {
-                logger.error("Failed to verify Google token - token verification returned null")
+            // Check if Google Client ID is configured
+            if (googleClientId.isBlank()) {
+                logger.error("GOOGLE_CLIENT_ID is not configured. Please set the GOOGLE_CLIENT_ID environment variable.")
                 return AuthResponse(
                     success = false,
-                    message = "Google token không hợp lệ"
+                    message = "Google OAuth không được cấu hình. Vui lòng liên hệ với quản trị viên hệ thống."
+                )
+            }
+
+            // Verify Google ID Token using Google's official verifier
+            val verifier = GOOGLE_ID_TOKEN_VERIFIER
+            if (verifier == null) {
+                logger.error("Failed to initialize Google ID Token Verifier")
+                return AuthResponse(
+                    success = false,
+                    message = "Không thể xác thực với Google. Vui lòng thử lại sau."
+                )
+            }
+
+            val idToken = verifier.verify(request.idToken)
+            if (idToken == null) {
+                logger.error("Failed to verify Google token - token verification returned null. Client ID: $googleClientId")
+                return AuthResponse(
+                    success = false,
+                    message = "Google token không hợp lệ hoặc Client ID không khớp"
                 )
             }
 

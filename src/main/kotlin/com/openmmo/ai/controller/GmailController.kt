@@ -7,6 +7,7 @@ import com.openmmo.ai.service.GmailApiService
 import com.openmmo.ai.service.MailboxItem
 import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.repository.GmailBotConfigRepository
+import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.security.core.Authentication
@@ -26,6 +27,9 @@ class GmailController(
     private val connectionRepository: GmailConnectionRepository,
     private val botConfigRepository: GmailBotConfigRepository
 ) {
+    companion object {
+        private val logger = LoggerFactory.getLogger(GmailController::class.java)
+    }
 
     @GetMapping("/connect/start")
     fun startConnect(authentication: Authentication): ResponseEntity<ConnectGmailResponse> {
@@ -150,9 +154,27 @@ class GmailController(
         @RequestParam(defaultValue = "20") max: Int,
         authentication: Authentication
     ): ResponseEntity<List<MailboxItem>> {
-        val userId = authentication.name
-        val items = apiService.getMailbox(userId, box, max)
-        return ResponseEntity.ok(items)
+        try {
+            val userId = authentication.name
+            logger.info("Fetching Gmail mailbox: userId=$userId, box=$box, max=$max")
+
+            val connection = connectionRepository.findByUserId(userId)
+            if (connection == null) {
+                logger.warn("Gmail not connected for user: $userId")
+                return ResponseEntity.status(401).body(emptyList())
+            }
+
+            logger.debug("Gmail connection found for user: $userId, email=${connection.gmailAddress}")
+            val items = apiService.getMailbox(userId, box, max)
+            logger.info("Successfully fetched ${items.size} emails from mailbox")
+            return ResponseEntity.ok(items)
+        } catch (e: IllegalStateException) {
+            logger.error("Gmail state error: ${e.message}")
+            return ResponseEntity.status(401).body(emptyList())
+        } catch (e: Exception) {
+            logger.error("Error fetching mailbox", e)
+            return ResponseEntity.status(500).body(emptyList())
+        }
     }
 }
 

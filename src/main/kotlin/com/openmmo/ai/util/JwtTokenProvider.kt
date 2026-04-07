@@ -2,8 +2,10 @@ package com.openmmo.ai.util
 
 import io.jsonwebtoken.*
 import io.jsonwebtoken.security.Keys
+import org.springframework.beans.factory.InitializingBean
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
+import org.slf4j.LoggerFactory
 import java.util.*
 import javax.crypto.SecretKey
 
@@ -13,7 +15,9 @@ import javax.crypto.SecretKey
  * Uses JJWT library with HS512 signature algorithm
  */
 @Component
-class JwtTokenProvider {
+class JwtTokenProvider : InitializingBean {
+
+    private val logger = LoggerFactory.getLogger(JwtTokenProvider::class.java)
 
     @Value("\${jwt.secret}")
     private lateinit var jwtSecret: String
@@ -23,6 +27,27 @@ class JwtTokenProvider {
 
     @Value("\${jwt.refresh.expiration}")
     private var refreshTokenExpirationMs: Long = 604800000 // 7 days
+
+    override fun afterPropertiesSet() {
+        // Validate JWT secret after properties are injected
+        if (!::jwtSecret.isInitialized || jwtSecret.isEmpty()) {
+            val error = "JWT_SECRET not configured. Set JWT_SECRET environment variable or configure jwt.secret in application.yaml"
+            logger.error(error)
+            throw IllegalStateException(error)
+        }
+
+        // Verify secret is valid Base64
+        try {
+            java.util.Base64.getDecoder().decode(jwtSecret)
+            logger.info("JWT secret validated successfully (Base64 format)")
+        } catch (ex: IllegalArgumentException) {
+            val error = "JWT_SECRET must be Base64 encoded. Current value is not valid Base64."
+            logger.error(error)
+            throw IllegalStateException(error, ex)
+        } catch (ex: Exception) {
+            logger.warn("Could not validate JWT secret format: ${ex.message}")
+        }
+    }
 
     /**
      * Generate JWT access token
@@ -179,9 +204,14 @@ class JwtTokenProvider {
      * Converts base64 secret to SecretKey for HS512 algorithm
      */
     private fun getSigningKey(): SecretKey {
-        // Decode base64 secret
-        val decodedKey = java.util.Base64.getDecoder().decode(jwtSecret)
-        return Keys.hmacShaKeyFor(decodedKey)
+        return try {
+            // Decode base64 secret
+            val decodedKey = java.util.Base64.getDecoder().decode(jwtSecret)
+            Keys.hmacShaKeyFor(decodedKey)
+        } catch (ex: IllegalArgumentException) {
+            logger.error("Failed to decode JWT secret as Base64", ex)
+            throw IllegalStateException("JWT secret must be valid Base64 encoded", ex)
+        }
     }
 
     /**

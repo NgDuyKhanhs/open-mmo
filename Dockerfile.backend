@@ -1,0 +1,45 @@
+# Backend Dockerfile - OpenMMO AI Backend (Spring Boot + Kotlin)
+# Multi-stage build for optimized image size
+
+# Stage 1: Build
+FROM eclipse-temurin:21-jdk AS builder
+
+WORKDIR /build
+
+# Copy gradle files
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle.kts .
+COPY settings.gradle.kts .
+
+# Copy source code
+COPY src src
+
+# Grant execute permission to gradlew
+RUN chmod +x gradlew
+
+# Build the application
+RUN ./gradlew build -x test --no-daemon
+
+# Stage 2: Runtime
+FROM eclipse-temurin:21-jre
+
+WORKDIR /app
+
+# Copy the built JAR from builder stage
+COPY --from=builder /build/build/libs/ai-0.0.1-SNAPSHOT.jar app.jar
+
+# Expose port
+EXPOSE 8080
+
+# Environment variables (override in docker-compose or at runtime)
+ENV JAVA_OPTS="-Xmx512m -Xms256m"
+ENV SPRING_PROFILES_ACTIVE="docker"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Run the application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+

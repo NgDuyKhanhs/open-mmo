@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { ref } from 'vue'
+  import { toast } from 'vue3-toastify'
   import SectionHeader from '../components/SectionHeader.vue'
 
   interface Props {
@@ -20,6 +21,7 @@
   const handleSubmit = () => {
     console.log('Form submitted:', formData.value)
     submitted.value = true
+    toast.success('Message sent successfully!')
     setTimeout(() => {
       submitted.value = false
       formData.value = { name: '', email: '', subject: '', message: '' }

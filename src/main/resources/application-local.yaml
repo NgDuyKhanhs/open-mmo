@@ -26,10 +26,10 @@ server:
 # ==============================================
 # JWT Configuration
 # ==============================================
-# LOCAL ONLY - Test value for development
-# In production, set via environment variable JWT_SECRET
+# LOCAL ONLY - Updated with 512-bit secret for HS512 algorithm
+# Secret: dk1qrTUJeUPfeJaog/lsC7P9i27rla7514968Ib0v61mEv7t15gp1/Bvo6WSjrqyfBsTednLTrMg8VvqKLCRxw==
 jwt:
-  secret: ${JWT_SECRET:test-jwt-secret-for-local-development-only-not-secure}
+  secret: ${JWT_SECRET:}
   expiration: 86400000
   refresh:
     expiration: 604800000
@@ -89,7 +89,7 @@ gmail:
 # ==============================================
 token:
   enc:
-    key-base64: ${TOKEN_ENC_KEY_BASE64:dGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXk=}
+    key-base64: ${TOKEN_ENC_KEY_BASE64:}
 
 # ==============================================
 # Gemini Configuration

@@ -26,8 +26,10 @@ server:
 # ==============================================
 # JWT Configuration
 # ==============================================
+# IMPORTANT: In production, set JWT_SECRET environment variable
+# Default below is 512-bit secret for HS512 algorithm
 jwt:
-  secret: ${JWT_SECRET:+F7KKKvYfJrUc4+qsRctUH+bQUpxpbP1A6yiQB7Cn8E=}
+  secret: ${JWT_SECRET:}
   expiration: 86400000
   refresh:
     expiration: 604800000
@@ -39,7 +41,7 @@ oauth2:
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8081/api/v1/auth/google-callback}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/google-callback}
 
 # ==============================================
 # Gmail OAuth Configuration
@@ -85,7 +87,7 @@ app:
 # ==============================================
 token:
   enc:
-    key-base64: ${TOKEN_ENC_KEY_BASE64:dZtg0g+Fd5E8a/+fyYAnS4xlt80NM1Rqr8Bgcn+Ghn4=}
+    key-base64: ${TOKEN_ENC_KEY_BASE64:}
 
 # ==============================================
 # Gemini Configuration

@@ -94,6 +94,10 @@ class SecurityConfig(
                         "/api-docs**"
                     ).permitAll()
 
+                    // Admin endpoints - allow without authentication for development
+                    .requestMatchers("/api/v1/admin/**")
+                    .permitAll()
+
                     // Gmail OAuth callback - allow without authentication (Google calls this directly)
                     .requestMatchers("/api/v1/gmail/connect/callback")
                     .permitAll()

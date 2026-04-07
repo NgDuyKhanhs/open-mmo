@@ -2,11 +2,13 @@ package com.openmmo.ai.service
 
 import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.util.EncryptionUtil
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 import java.util.Base64
 
@@ -30,50 +32,67 @@ class GmailApiService(
 
     companion object {
         private const val GMAIL_API_BASE = "https://www.googleapis.com/gmail/v1/users/me"
+        private val logger = LoggerFactory.getLogger(GmailApiService::class.java)
     }
 
     fun getMailbox(userId: String, boxType: String, maxResults: Int = 20): List<MailboxItem> {
-        val connection = connectionRepository.findByUserId(userId)
-            ?: throw IllegalStateException("Gmail not connected")
+        try {
+            logger.info("Getting mailbox for user: $userId, box=$boxType")
 
-        val accessToken = getAccessToken(connection)
+            val connection = connectionRepository.findByUserId(userId)
+                ?: throw IllegalStateException("Gmail not connected")
 
-        val query = when (boxType) {
-            "inbox" -> "in:inbox"
-            "sent" -> "in:sent"
-            "spam" -> "in:spam"
-            "trash" -> "in:trash"
-            else -> throw IllegalArgumentException("Invalid box type")
-        }
+            logger.debug("Gmail connection found, getting access token")
+            val accessToken = getAccessToken(connection)
 
-        val url = "$GMAIL_API_BASE/messages?q=$query&maxResults=$maxResults"
-
-        val headers = HttpHeaders().apply {
-            set("Authorization", "Bearer $accessToken")
-        }
-        val request = HttpEntity<String>(headers)
-
-        @Suppress("UNCHECKED_CAST")
-        val response = restTemplate.exchange(
-            url,
-            HttpMethod.GET,
-            request,
-            Map::class.java
-        ).body
-
-        @Suppress("UNCHECKED_CAST")
-        val messages = (response?.get("messages") as? List<Map<String, String>>) ?: emptyList()
-
-        return messages.mapNotNull { msg ->
-            val msgId = msg["id"] ?: return@mapNotNull null
-            val threadId = msg["threadId"] ?: return@mapNotNull null
-
-            try {
-                val full = getMessageDetails(accessToken, msgId)
-                full.copy(threadId = threadId)
-            } catch (e: Exception) {
-                null
+            val query = when (boxType) {
+                "inbox" -> "in:inbox"
+                "sent" -> "in:sent"
+                "spam" -> "in:spam"
+                "trash" -> "in:trash"
+                else -> throw IllegalArgumentException("Invalid box type")
             }
+
+            val url = "$GMAIL_API_BASE/messages?q=$query&maxResults=$maxResults"
+            logger.debug("Calling Gmail API: $url")
+
+            val headers = HttpHeaders().apply {
+                set("Authorization", "Bearer $accessToken")
+            }
+            val request = HttpEntity<String>(headers)
+
+            @Suppress("UNCHECKED_CAST")
+            val response = try {
+                restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    request,
+                    Map::class.java
+                ).body
+            } catch (e: HttpClientErrorException) {
+                logger.error("HTTP error from Gmail API: ${e.statusCode} - ${e.responseBodyAsString}")
+                throw IllegalStateException("Gmail API error: ${e.statusCode}")
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            val messages = (response?.get("messages") as? List<Map<String, String>>) ?: emptyList()
+            logger.info("Found ${messages.size} messages in mailbox")
+
+            return messages.mapNotNull { msg ->
+                val msgId = msg["id"] ?: return@mapNotNull null
+                val threadId = msg["threadId"] ?: return@mapNotNull null
+
+                try {
+                    val full = getMessageDetails(accessToken, msgId)
+                    full.copy(threadId = threadId)
+                } catch (e: Exception) {
+                    logger.warn("Failed to get details for message $msgId: ${e.message}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Error getting mailbox", e)
+            throw e
         }
     }
 
@@ -246,8 +265,17 @@ $bodyText
     }
 
     private fun getAccessToken(connection: com.openmmo.ai.entity.GmailConnection): String {
-        val decryptedRefreshToken = EncryptionUtil.decrypt(connection.refreshTokenEnc, tokenEncKey)
-        return oauthService.refreshAccessToken(decryptedRefreshToken)
+        try {
+            logger.debug("Decrypting refresh token for user: ${connection.userId}")
+            val decryptedRefreshToken = EncryptionUtil.decrypt(connection.refreshTokenEnc, tokenEncKey)
+            logger.debug("Refreshing access token")
+            val token = oauthService.refreshAccessToken(decryptedRefreshToken)
+            logger.debug("Access token refreshed successfully")
+            return token
+        } catch (e: Exception) {
+            logger.error("Failed to get access token: ${e.message}", e)
+            throw e
+        }
     }
 
     private fun extractBodyText(payload: Map<String, Any>?): String {
