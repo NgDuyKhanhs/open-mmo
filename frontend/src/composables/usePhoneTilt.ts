@@ -27,7 +27,7 @@ interface TiltState {
  */
 export function usePhoneTilt(
   phoneRef: Ref<HTMLElement | null>,
-  options: TiltOptions = {},
+  options: TiltOptions = {}
 ): TiltState {
   const { maxRotate = 15, enabled = true } = options
 

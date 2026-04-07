@@ -37,9 +37,17 @@ jwt:
 # ==============================================
 oauth2:
   google:
-    client-id: ${GOOGLE_CLIENT_ID:779295627515-28h679li4r6e3mkjn5hspm7g7nqatjre.apps.googleusercontent.com}
-    client-secret: ${GOOGLE_CLIENT_SECRET:GOCSPX-example-secret}
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
     redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8081/api/v1/auth/google-callback}
+
+# ==============================================
+# Gmail OAuth Configuration
+# ==============================================
+gmail:
+  oauth:
+    redirect-uri: ${GMAIL_OAUTH_REDIRECT_URI:http://localhost:8080/api/v1/gmail/connect/callback}
+  app-web-url: ${APP_WEB_URL:http://localhost:5173}
 
 # ==============================================
 # CORS Configuration  
@@ -70,4 +78,18 @@ app:
   name: OpenMMO AI Backend
   description: AI integration backend for OpenMMO
   version: 1.0.0-beta
+  web-url: ${APP_WEB_URL:http://localhost:5173}
+
+# ==============================================
+# Token Encryption
+# ==============================================
+token:
+  enc:
+    key-base64: ${TOKEN_ENC_KEY_BASE64:dZtg0g+Fd5E8a/+fyYAnS4xlt80NM1Rqr8Bgcn+Ghn4=}
+
+# ==============================================
+# Gemini Configuration
+# ==============================================
+gemini:
+  api-key: ${GEMINI_API_KEY:}
 

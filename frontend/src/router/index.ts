@@ -20,6 +20,9 @@ const ServicesView = () => import('@/views/ServicesView.vue')
 const ContactView = () => import('@/views/ContactView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const ProfileView = () => import('@/views/ProfileView.vue')
+const EmailAiBotView = () => import('@/views/EmailAiBotView.vue')
+const PrivacyPolicyView = () => import('@/views/PrivacyPolicyView.vue')
+const TermsOfServiceView = () => import('@/views/TermsOfServiceView.vue')
 const NotFoundView = () => import('@/views/NotFoundView.vue')
 
 /**
@@ -80,6 +83,36 @@ const routes: RouteRecordRaw[] = [
       title: 'My Profile - OpenMMO.ai - Turn ideas into digital businesses with AI',
       description: 'Manage your personal profile details.',
       requiresAuth: true,
+    },
+  },
+  {
+    path: '/email-ai-bot',
+    name: 'email-ai-bot',
+    component: EmailAiBotView,
+    meta: {
+      title: 'Email AI Bot - Selling Through Email with AI',
+      description: 'AI-powered email reply bot for automated customer responses.',
+      requiresAuth: true,
+    },
+  },
+  {
+    path: '/privacy-policy',
+    name: 'privacy-policy',
+    component: PrivacyPolicyView,
+    meta: {
+      title: 'Privacy Policy - OpenMMO.ai',
+      description: 'Privacy Policy for OpenMMO - protecting your data and privacy.',
+      requiresAuth: false,
+    },
+  },
+  {
+    path: '/terms-of-service',
+    name: 'terms-of-service',
+    component: TermsOfServiceView,
+    meta: {
+      title: 'Terms of Service - OpenMMO.ai',
+      description: 'Terms of Service for OpenMMO - our commitment to you.',
+      requiresAuth: false,
     },
   },
   {

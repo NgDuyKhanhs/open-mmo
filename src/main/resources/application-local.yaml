@@ -1,0 +1,96 @@
+spring:
+  application:
+    name: ai
+
+  # MongoDB Configuration - Local Development
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/openmmo}
+      database: ${MONGODB_DATABASE:openmmo}
+      auto-index-creation: true
+
+  # Spring AI Configuration
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+# ==============================================
+# JWT Configuration
+# ==============================================
+jwt:
+  secret: ${JWT_SECRET:dGhpcyBpcyBhIGxvbmcgand0IHNlY3JldCBrZXkgdGhhdCBzaG91bGQgYmUgYXQgbGVhc3QgMjU2IGJpdHMgZm9yIEhTNTEyIHNpZ25hdHVyZSBhbGdvcml0aG0gYW5kIGluIHByb2R1Y3Rpb24gdXNlIGEgc3Ryb25nIHJhbmRvbSBrZXk=}
+  expiration: 86400000
+  refresh:
+    expiration: 604800000
+
+# ==============================================
+# OAuth2 Google Configuration
+# ==============================================
+oauth2:
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/google-callback}
+
+# ==============================================
+# CORS Configuration
+# ==============================================
+cors:
+  allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:8080}
+  allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+  allowed-headers: Authorization,Content-Type,X-Requested-With
+  allow-credentials: true
+  max-age: 3600
+
+# ==============================================
+# Logging Configuration - Development
+# ==============================================
+logging:
+  level:
+    root: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.boot.autoconfigure: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG
+    com.openmmo.ai: DEBUG
+    org.springaicommunity: DEBUG
+  format:
+    console: "[%d{yyyy-MM-dd HH:mm:ss}] [%thread] [%level] %logger{36} - %msg%n"
+
+# ==============================================
+# Application Configuration
+# ==============================================
+app:
+  name: OpenMMO AI Backend
+  description: AI integration backend for OpenMMO - Make Money Online Platform
+  version: 1.0.0-beta
+  web-url: ${APP_WEB_URL:http://localhost:5173}
+
+# ==============================================
+# Gmail Configuration
+# ==============================================
+gmail:
+  oauth:
+    redirect-uri: ${GMAIL_OAUTH_REDIRECT_URI:http://localhost:8080/api/v1/gmail/connect/callback}
+
+# ==============================================
+# Token Encryption
+# ==============================================
+token:
+  enc:
+    key-base64: ${TOKEN_ENC_KEY_BASE64:dGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXk=}
+
+# ==============================================
+# Gemini Configuration
+# ==============================================
+gemini:
+  api-key: ${GEMINI_API_KEY:}

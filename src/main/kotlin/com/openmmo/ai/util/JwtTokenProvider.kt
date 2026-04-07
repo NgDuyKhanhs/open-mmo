@@ -71,20 +71,30 @@ class JwtTokenProvider {
      */
     fun validateToken(token: String): Boolean {
         return try {
+            val signingKey = getSigningKey()
             Jwts.parser()
-                .verifyWith(getSigningKey())
+                .verifyWith(signingKey)
                 .build()
                 .parseSignedClaims(token)
             true
         } catch (ex: SecurityException) {
+            System.err.println("JWT Security exception: ${ex.message}")
             false
         } catch (ex: MalformedJwtException) {
+            System.err.println("JWT Malformed exception: ${ex.message}")
             false
         } catch (ex: ExpiredJwtException) {
+            System.err.println("JWT Expired exception: ${ex.message}")
             false
         } catch (ex: UnsupportedJwtException) {
+            System.err.println("JWT Unsupported exception: ${ex.message}")
             false
         } catch (ex: IllegalArgumentException) {
+            System.err.println("JWT Illegal argument exception: ${ex.message}")
+            false
+        } catch (ex: Exception) {
+            System.err.println("JWT Validation exception: ${ex.message}")
+            ex.printStackTrace()
             false
         }
     }

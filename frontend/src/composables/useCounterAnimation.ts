@@ -22,7 +22,7 @@ interface CounterAnimationOptions {
  */
 export function useCounterAnimation(
   targets: number[],
-  options: CounterAnimationOptions = {},
+  options: CounterAnimationOptions = {}
 ): Ref<number[]> {
   const { duration = 1200, stepDuration = 30, staggerDelay = 200, easing = easeOutQuad } = options
 

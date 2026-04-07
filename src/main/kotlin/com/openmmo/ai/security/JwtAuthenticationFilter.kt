@@ -34,36 +34,49 @@ class JwtAuthenticationFilter(
         try {
             val token = getJwtFromRequest(request)
 
-            if (token != null && jwtTokenProvider.validateToken(token)) {
-                val userId = jwtTokenProvider.getUserIdFromToken(token)
-                val email = jwtTokenProvider.getEmailFromToken(token)
-                val roles = jwtTokenProvider.getRolesFromToken(token)
+            logger.debug("🔍 JWT Filter - Checking token for: ${request.requestURI}")
+            if (token != null) {
+                logger.debug("🔑 Token found, length: ${token.length}, start: ${token.substring(0, 20)}...")
+                logger.debug("Validating token...")
 
-                if (userId != null) {
-                    // Convert roles to GrantedAuthority
-                    val authorities = roles.map { SimpleGrantedAuthority("ROLE_$it") }
+                if (jwtTokenProvider.validateToken(token)) {
+                    logger.debug("Token valid!")
+                    val userId = jwtTokenProvider.getUserIdFromToken(token)
+                    val email = jwtTokenProvider.getEmailFromToken(token)
+                    val roles = jwtTokenProvider.getRolesFromToken(token)
 
-                    // Create authentication token
-                    val authenticationToken = UsernamePasswordAuthenticationToken(
-                        userId,
-                        null,
-                        authorities
-                    )
+                    logger.debug("📋 Token claims - userId: $userId, email: $email, roles: $roles")
 
-                    // Set authentication details
-                    authenticationToken.details = mapOf(
-                        "email" to email,
-                        "token" to token
-                    )
+                    if (userId != null) {
+                        // Convert roles to GrantedAuthority
+                        val authorities = roles.map { SimpleGrantedAuthority("ROLE_$it") }
 
-                    // Set in security context
-                    SecurityContextHolder.getContext().authentication = authenticationToken
+                        // Create authentication token
+                        val authenticationToken = UsernamePasswordAuthenticationToken(
+                            userId,
+                            null,
+                            authorities
+                        )
 
-                    logger.debug("Set Spring Security authentication for user: $userId")
+                        // Set authentication details
+                        authenticationToken.details = mapOf(
+                            "email" to email,
+                            "token" to token
+                        )
+
+                        // Set in security context
+                        SecurityContextHolder.getContext().authentication = authenticationToken
+
+                        logger.debug("Set Spring Security authentication for user: $userId")
+                    }
+                } else {
+                    logger.debug("Token validation failed!")
                 }
+            } else {
+                logger.debug("⚠️  No token found in request")
             }
         } catch (ex: Exception) {
-            logger.debug("Could not set user authentication in security context", ex)
+            logger.debug("JWT Filter exception: ${ex.message}", ex)
         }
 
         filterChain.doFilter(request, response)

@@ -95,6 +95,7 @@ export async function login(payload: LoginPayload): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/login`, {
     method: 'POST',
     headers: getHeaders(),
+    credentials: 'include', // 🔐 Send/receive cookies
     body: JSON.stringify(payload),
   })
 
@@ -108,6 +109,7 @@ export async function googleLogin(payload: GoogleLoginPayload): Promise<AuthResp
   const response = await fetch(`${API_BASE_URL}/google-login`, {
     method: 'POST',
     headers: getHeaders(),
+    credentials: 'include', // 🔐 Send/receive cookies
     body: JSON.stringify(payload),
   })
 
@@ -116,12 +118,15 @@ export async function googleLogin(payload: GoogleLoginPayload): Promise<AuthResp
 
 /**
  * Refresh access token
+ * 🔐 RefreshToken is auto-sent in HttpOnly cookie by browser
  */
 export async function refreshToken(refreshToken: string): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/refresh-token`, {
     method: 'POST',
     headers: getHeaders(),
-    body: JSON.stringify({ refreshToken }),
+    credentials: 'include', // 🔐 Allow browser to send cookies
+    // Only send body if refreshToken is provided (fallback for manual refresh)
+    ...(refreshToken ? { body: JSON.stringify({ refreshToken }) } : {}),
   })
 
   return handleResponse(response)
@@ -146,7 +151,7 @@ export async function changePassword(
   accessToken: string,
   currentPassword: string,
   newPassword: string,
-  confirmPassword: string,
+  confirmPassword: string
 ): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/change-password`, {
     method: 'POST',
@@ -168,6 +173,7 @@ export async function logout(accessToken: string): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/logout`, {
     method: 'POST',
     headers: getHeaders(accessToken),
+    credentials: 'include', // 🔐 Send/receive cookies
   })
 
   return handleResponse(response)

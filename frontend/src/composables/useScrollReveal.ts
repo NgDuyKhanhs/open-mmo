@@ -47,7 +47,7 @@ export function useScrollReveal(options: ScrollRevealOptions = {}) {
       {
         threshold,
         rootMargin,
-      },
+      }
     )
   }
 

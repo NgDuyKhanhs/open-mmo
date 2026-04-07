@@ -18,6 +18,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.slf4j.LoggerFactory
 
 /**
  * Spring Security Configuration
@@ -28,6 +29,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 class SecurityConfig(
     private val jwtTokenProvider: JwtTokenProvider
 ) {
+
+    private val logger = LoggerFactory.getLogger(SecurityConfig::class.java)
 
     @Value("\${cors.allowed-origins:http://localhost:5173,http://localhost:3000,http://localhost:4200}")
     private lateinit var allowedOrigins: String
@@ -90,6 +93,14 @@ class SecurityConfig(
                         "/v3/api-docs/**",
                         "/api-docs**"
                     ).permitAll()
+
+                    // Gmail OAuth callback - allow without authentication (Google calls this directly)
+                    .requestMatchers("/api/v1/gmail/connect/callback")
+                    .permitAll()
+
+                    // Gmail endpoints - require authentication
+                    .requestMatchers("/api/v1/gmail/**")
+                    .authenticated()
 
                     // Agent endpoints - require authentication
                     .requestMatchers("/api/v1/agent/**")
@@ -154,13 +165,24 @@ class SecurityConfig(
     fun corsConfigurationSource(): CorsConfigurationSource {
         val configuration = CorsConfiguration()
 
-        // Handle wildcard origins
-        if (allowedOrigins == "*") {
-            configuration.allowedOriginPatterns = listOf("*")
+        // Parse allowed origins from config
+        val origins = allowedOrigins
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != "*" } // Filter out empty or wildcard
+
+        logger.info("🔐 CORS origins configured: $origins")
+
+        // Use pattern if needed for development
+        if (origins.isEmpty()) {
+            logger.warn("⚠️  No CORS origins configured, defaulting to localhost")
+            configuration.allowedOrigins = listOf(
+                "http://localhost:5173",
+                "http://localhost:8080",
+                "http://localhost:3000"
+            )
         } else {
-            configuration.allowedOrigins = allowedOrigins
-                .split(",")
-                .map { it.trim() }
+            configuration.allowedOrigins = origins
         }
 
         // Parse allowed methods
@@ -185,6 +207,7 @@ class SecurityConfig(
         configuration.allowedHeaders = customHeaders
         configuration.exposedHeaders = listOf("Authorization", "Content-Type")
 
+        // 🔐 Enable credentials for HttpOnly cookie support
         configuration.allowCredentials = true
         configuration.maxAge = maxAge
 

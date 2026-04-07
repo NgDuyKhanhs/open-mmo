@@ -20,36 +20,30 @@ export interface User {
 interface AuthState {
   user: User | null
   accessToken: string | null
-  refreshToken: string | null
   isLoading: boolean
   error: string | null
 }
 
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'auth_access_token',
-  REFRESH_TOKEN: 'auth_refresh_token',
   USER: 'auth_user',
+  // 🔐 IMPORTANT: RefreshToken is now stored in HttpOnly cookie, not localStorage
 }
 
 export const useAuthStore = defineStore('auth', () => {
   // State
   const user = ref<User | null>(null)
   const accessToken = ref<string | null>(null)
-  const refreshToken = ref<string | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
   // Initialize from localStorage
   const initializeAuth = () => {
     const storedAccessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)
-    const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN)
     const storedUser = localStorage.getItem(STORAGE_KEYS.USER)
 
     if (storedAccessToken) {
       accessToken.value = storedAccessToken
-    }
-    if (storedRefreshToken) {
-      refreshToken.value = storedRefreshToken
     }
     if (storedUser) {
       try {
@@ -59,35 +53,36 @@ export const useAuthStore = defineStore('auth', () => {
         clearAuth()
       }
     }
+
+    // 🔐 RefreshToken is auto-managed by browser via HttpOnly cookie
+    console.log('✅ Auth initialized from localStorage. RefreshToken is in HttpOnly cookie.')
   }
 
   // Getters
   const isLoggedIn = computed(() => !!user.value && !!accessToken.value)
   const isAdmin = computed(() => user.value?.roles.includes('ADMIN') ?? false)
   const isModerator = computed(() => user.value?.roles.includes('MODERATOR') ?? false)
+  const token = computed(() => accessToken.value)
 
   // Helper to save to localStorage
   const saveToStorage = () => {
     if (accessToken.value) {
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken.value)
     }
-    if (refreshToken.value) {
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken.value)
-    }
     if (user.value) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user.value))
     }
+    // 🔐 RefreshToken is NOT saved to localStorage (stored in HttpOnly cookie by backend)
   }
 
   // Helper to clear auth state
   const clearAuth = () => {
     user.value = null
     accessToken.value = null
-    refreshToken.value = null
     error.value = null
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN)
-    localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN)
     localStorage.removeItem(STORAGE_KEYS.USER)
+    // 🔐 Browser will auto-clear HttpOnly cookie on logout
   }
 
   // Helper to handle auth response
@@ -95,9 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (response.success && response.user && response.accessToken) {
       user.value = response.user
       accessToken.value = response.accessToken
-      if (response.refreshToken) {
-        refreshToken.value = response.refreshToken
-      }
+      // 🔐 RefreshToken is NOT stored here - it's in HttpOnly cookie
       saveToStorage()
       error.value = null
       return true
@@ -171,53 +164,89 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const refreshTokenManual = async () => {
-    if (!refreshToken.value) {
-      clearAuth()
-      return false
-    }
-
     try {
-      const response = await refreshTokenAPI(refreshToken.value)
+      console.log('🔄 Attempting token refresh...')
+      // 🔐 RefreshToken is in HttpOnly cookie - just send empty body
+      // Backend will automatically read from cookie
+      const response = await refreshTokenAPI('')
 
       if (response.success && response.accessToken) {
         accessToken.value = response.accessToken
+        // 🔐 New RefreshToken is in HttpOnly cookie (not in response)
         saveToStorage()
+        console.log('✅ Token refreshed successfully')
         return true
       } else {
+        console.error('❌ Token refresh failed:', response.message)
         clearAuth()
         return false
       }
     } catch (err) {
-      console.error('Token refresh failed:', err)
+      console.error('❌ Token refresh error:', err)
       clearAuth()
       return false
     }
   }
 
-  const clearError = () => {
-    error.value = null
-  }
+   const clearError = () => {
+     error.value = null
+   }
 
-  return {
-    // State
-    user,
-    accessToken,
-    refreshToken,
-    isLoading,
-    error,
+   // Helper to decode JWT and check expiration
+   const isTokenExpiringSoon = (token: string | null, thresholdMs: number = 5 * 60 * 1000): boolean => {
+     if (!token) return true // No token = expired
 
-    // Getters
-    isLoggedIn,
-    isAdmin,
-    isModerator,
+     try {
+       // JWT format: header.payload.signature
+       const parts = token.split('.')
+       if (parts.length !== 3) return true
 
-    // Actions
-    initializeAuth,
-    loginWithCredentials,
-    loginWithGoogle,
-    performLogout,
-    refreshTokenManual,
-    clearError,
-    clearAuth,
-  }
+       // Decode payload (add padding if needed)
+       let payload = parts[1]
+       const padLength = 4 - (payload.length % 4)
+       if (padLength !== 4) {
+         payload += '='.repeat(padLength)
+       }
+
+       const decoded = JSON.parse(atob(payload))
+       const expirationTime = decoded.exp * 1000 // Convert to milliseconds
+       const currentTime = Date.now()
+       const timeUntilExpiration = expirationTime - currentTime
+
+       console.log('🔐 Token expiration check:', {
+         expiresIn: Math.floor(timeUntilExpiration / 1000) + 's',
+         threshold: Math.floor(thresholdMs / 1000) + 's',
+         willRefresh: timeUntilExpiration < thresholdMs,
+       })
+
+       return timeUntilExpiration < thresholdMs
+     } catch (e) {
+       console.error('Failed to decode token:', e)
+       return true // Assume expired if decode fails
+     }
+   }
+
+    return {
+     // State
+     user,
+     accessToken,
+     isLoading,
+     error,
+
+     // Getters
+     isLoggedIn,
+     isAdmin,
+     isModerator,
+     token,
+
+     // Actions
+     initializeAuth,
+     loginWithCredentials,
+     loginWithGoogle,
+     performLogout,
+     refreshTokenManual,
+     clearError,
+     clearAuth,
+     isTokenExpiringSoon,
+   }
 })

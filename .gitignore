@@ -12,12 +12,15 @@ build/
 .env.production.local
 .env.development.local
 .env.test.local
+application-local.yaml
 *.key
 *.pem
 client_secret*.json
 credentials.json
 secrets.yaml
 .aws/
+*.bak
+*.backup
 
 ### STS ###
 .apt_generated
@@ -67,3 +70,12 @@ dist/
 *.swo
 *~
 .DS_Store
+
+### Logs ###
+*.log
+logs/
+
+### Database ###
+*.db
+*.sqlite
+mongodb-data/
