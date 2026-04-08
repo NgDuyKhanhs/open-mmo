@@ -69,22 +69,41 @@ class GmailBotServiceImpl(
     override fun updateConfig(userId: String, triggerSubject: String): Map<String, String> {
         logger.info("Updating Gmail bot config for user: $userId")
 
+        // Validate triggerSubject not empty
+        if (triggerSubject.isBlank()) {
+            logger.warn("Invalid updateConfig request: triggerSubject is empty for user: $userId")
+            return mapOf(
+                "status" to "error",
+                "message" to "Trigger subject cannot be empty"
+            )
+        }
+
         val config = botConfigRepository.findByUserId(userId)
             ?: GmailBotConfig(userId = userId)
 
-        botConfigRepository.save(config.copy(triggerSubject = triggerSubject))
-        logger.debug("Gmail bot config updated for user: $userId")
+        botConfigRepository.save(config.copy(triggerSubject = triggerSubject.trim()))
+        logger.debug("Gmail bot config updated for user: $userId with triggerSubject: $triggerSubject")
 
-        return mapOf("status" to "Config updated")
+        return mapOf(
+            "status" to "success",
+            "message" to "Config updated"
+        )
     }
 
     override fun getPrompt(userId: String): Map<String, String> {
         logger.debug("Getting Gmail bot prompt for user: $userId")
 
         val config = botConfigRepository.findByUserId(userId)
-        val customPrompt = config?.customPrompt ?: ""
 
-        return mapOf("customPrompt" to customPrompt)
+        // If customPrompt is null/empty, indicate using default prompt
+        val customPrompt = config?.customPrompt ?: ""
+        val isUsingDefault = customPrompt.isBlank()
+
+        return mapOf(
+            "customPrompt" to customPrompt,
+            "isUsingDefault" to isUsingDefault.toString(),
+            "note" to if (isUsingDefault) "Using default prompt" else "Using custom prompt"
+        )
     }
 
     override fun updatePrompt(userId: String, customPrompt: String): Map<String, String> {
@@ -93,10 +112,23 @@ class GmailBotServiceImpl(
         val config = botConfigRepository.findByUserId(userId)
             ?: GmailBotConfig(userId = userId)
 
-        botConfigRepository.save(config.copy(customPrompt = customPrompt))
+        // If customPrompt is empty/blank, set to empty string (use default prompt)
+        // Otherwise, trim and save the custom prompt
+        val promptToSave = if (customPrompt.isBlank()) {
+            logger.debug("Custom prompt is empty, will use default prompt for user: $userId")
+            ""
+        } else {
+            logger.debug("Saving custom prompt for user: $userId")
+            customPrompt.trim()
+        }
+
+        botConfigRepository.save(config.copy(customPrompt = promptToSave))
         logger.debug("Gmail bot prompt updated for user: $userId")
 
-        return mapOf("status" to "Prompt updated")
+        return mapOf(
+            "status" to "success",
+            "message" to if (promptToSave.isBlank()) "Using default prompt" else "Custom prompt saved"
+        )
     }
 }
 

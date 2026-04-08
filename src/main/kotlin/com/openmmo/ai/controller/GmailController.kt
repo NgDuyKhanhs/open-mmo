@@ -87,10 +87,20 @@ class GmailController(
     ): ResponseEntity<Map<String, String>> {
         val userId = authentication.name
         val triggerSubject = request["triggerSubject"] ?: return ResponseEntity.badRequest()
-            .body(mapOf("error" to "Missing triggerSubject"))
+            .body(mapOf(
+                "status" to "error",
+                "message" to "Missing triggerSubject"
+            ))
 
         logger.info("Updating Gmail bot config for user: $userId")
-        return ResponseEntity.ok(botService.updateConfig(userId, triggerSubject))
+        val result = botService.updateConfig(userId, triggerSubject)
+
+        // Check if update was successful or validation failed
+        return if (result["status"] == "error") {
+            ResponseEntity.badRequest().body(result)
+        } else {
+            ResponseEntity.ok(result)
+        }
     }
 
     @GetMapping("/bot/prompt")
