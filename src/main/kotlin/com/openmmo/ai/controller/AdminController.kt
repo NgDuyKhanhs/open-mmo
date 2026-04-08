@@ -6,6 +6,10 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
+/**
+ * Admin Controller
+ * Admin-only operations for system management
+ */
 @RestController
 @RequestMapping("/api/v1/admin")
 @CrossOrigin(
@@ -21,6 +25,10 @@ class AdminController(
         private val logger = LoggerFactory.getLogger(AdminController::class.java)
     }
 
+    /**
+     * Clear all Gmail connections and bot configs
+     * WARNING: This deletes all Gmail data!
+     */
     @PostMapping("/gmail/clear-all")
     fun clearAllGmailConnections(): ResponseEntity<Map<String, Any>> {
         try {

@@ -13,3 +13,18 @@ data class GmailStatusResponse(
     val lastError: String?
 )
 
+data class MailboxItemResponse(
+    val id: String,
+    val threadId: String,
+    val from: String,
+    val subject: String,
+    val date: String,
+    val snippet: String,
+    val labels: List<String>
+)
+
+data class GmailBotConfigRequest(
+    val triggerSubject: String? = null,
+    val customPrompt: String? = null,
+    val enabled: Boolean? = null
+)

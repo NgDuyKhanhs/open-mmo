@@ -1,7 +1,7 @@
 package com.openmmo.ai.controller
 
 import com.openmmo.ai.dto.*
-import com.openmmo.ai.service.AuthenticationService
+import com.openmmo.ai.service.IAuthenticationService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.HttpHeaders
@@ -22,7 +22,7 @@ import jakarta.servlet.http.HttpServletResponse
     allowCredentials = "true"
 )
 class AuthenticationController(
-    private val authenticationService: AuthenticationService
+    private val authenticationService: IAuthenticationService
 ) {
 
     private val logger = LoggerFactory.getLogger(AuthenticationController::class.java)

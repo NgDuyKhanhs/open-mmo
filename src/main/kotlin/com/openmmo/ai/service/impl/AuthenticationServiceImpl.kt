@@ -1,4 +1,4 @@
-package com.openmmo.ai.service
+package com.openmmo.ai.service.impl
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
 import com.google.api.client.http.javanet.NetHttpTransport
@@ -6,6 +6,7 @@ import com.google.api.client.json.gson.GsonFactory
 import com.openmmo.ai.dto.*
 import com.openmmo.ai.entity.User
 import com.openmmo.ai.repository.UserRepository
+import com.openmmo.ai.service.IAuthenticationService
 import com.openmmo.ai.util.JwtTokenProvider
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -15,19 +16,19 @@ import java.time.LocalDateTime
 import java.util.*
 
 /**
- * Authentication Service
+ * Authentication Service Implementation
  * Handles user registration, login, OAuth, and token management
  */
 @Service
-class AuthenticationService(
+class AuthenticationServiceImpl(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtTokenProvider: JwtTokenProvider,
     @Value("\${oauth2.google.client-id}") private val googleClientId: String
-) {
+) : IAuthenticationService {
 
-    private val logger = LoggerFactory.getLogger(AuthenticationService::class.java)
-    
+    private val logger = LoggerFactory.getLogger(AuthenticationServiceImpl::class.java)
+
     // Google OAuth Configuration - Built lazily
     private val GOOGLE_ID_TOKEN_VERIFIER: GoogleIdTokenVerifier?
         get() {
@@ -49,7 +50,7 @@ class AuthenticationService(
     /**
      * Register new user with email and password
      */
-    fun register(request: RegisterRequest): AuthResponse {
+    override fun register(request: RegisterRequest): AuthResponse {
         // Validate input
         val validationError = request.validate()
         if (validationError != null) {
@@ -92,12 +93,12 @@ class AuthenticationService(
 
             // Generate tokens
             val accessToken = jwtTokenProvider.generateAccessToken(
-                savedUser.id!!, 
+                savedUser.id!!,
                 savedUser.email,
                 savedUser.roles
             )
             val refreshToken = jwtTokenProvider.generateRefreshToken(
-                savedUser.id, 
+                savedUser.id,
                 savedUser.email
             )
 
@@ -121,7 +122,7 @@ class AuthenticationService(
     /**
      * Login user with email/username and password
      */
-    fun login(request: LoginRequest): AuthResponse {
+    override fun login(request: LoginRequest): AuthResponse {
         // Validate input
         val validationError = request.validate()
         if (validationError != null) {
@@ -163,7 +164,7 @@ class AuthenticationService(
         if (!passwordEncoder.matches(request.password, user.password)) {
             user.incrementFailedLoginAttempts()
             userRepository.save(user)
-            
+
             logger.warn("Failed login attempt for user: ${user.email}")
             return AuthResponse(
                 success = false,
@@ -177,12 +178,12 @@ class AuthenticationService(
 
         // Generate tokens
         val accessToken = jwtTokenProvider.generateAccessToken(
-            user.id!!, 
+            user.id!!,
             user.email,
             user.roles
         )
         val refreshToken = jwtTokenProvider.generateRefreshToken(
-            user.id, 
+            user.id,
             user.email
         )
 
@@ -202,7 +203,7 @@ class AuthenticationService(
      * Login with Google OAuth token
      * Verifies token and creates/updates user
      */
-    fun googleLogin(request: GoogleLoginRequest): AuthResponse {
+    override fun googleLogin(request: GoogleLoginRequest): AuthResponse {
         // Validate input
         val validationError = request.validate()
         if (validationError != null) {
@@ -214,7 +215,7 @@ class AuthenticationService(
 
         try {
             logger.info("Processing Google login with token")
-            
+
             // Check if Google Client ID is configured
             if (googleClientId.isBlank()) {
                 logger.error("GOOGLE_CLIENT_ID is not configured. Please set the GOOGLE_CLIENT_ID environment variable.")
@@ -261,7 +262,7 @@ class AuthenticationService(
             // Find or create user
             logger.info("Looking for user with email: $email")
             val userOptional = userRepository.findByEmail(email)
-            
+
             val user = if (userOptional.isPresent) {
                 // Update existing user
                 logger.info("User found, updating login info")
@@ -299,12 +300,12 @@ class AuthenticationService(
 
             // Generate application JWT tokens
             val accessToken = jwtTokenProvider.generateAccessToken(
-                user.id!!, 
+                user.id!!,
                 user.email,
                 user.roles
             )
             val refreshToken = jwtTokenProvider.generateRefreshToken(
-                user.id, 
+                user.id,
                 user.email
             )
 
@@ -330,7 +331,7 @@ class AuthenticationService(
     /**
      * Refresh access token using refresh token
      */
-    fun refreshToken(request: RefreshTokenRequest): AuthResponse {
+    override fun refreshToken(request: RefreshTokenRequest): AuthResponse {
         // Validate input
         val validationError = request.validate()
         if (validationError != null) {
@@ -372,7 +373,7 @@ class AuthenticationService(
 
         // Generate new access token
         val newAccessToken = jwtTokenProvider.generateAccessToken(
-            user.id!!, 
+            user.id!!,
             user.email,
             user.roles
         )
@@ -390,7 +391,7 @@ class AuthenticationService(
     /**
      * Change password for authenticated user
      */
-    fun changePassword(userId: String, request: ChangePasswordRequest): AuthResponse {
+    override fun changePassword(userId: String, request: ChangePasswordRequest): AuthResponse {
         // Validate input
         val validationError = request.validate()
         if (validationError != null) {
@@ -433,35 +434,17 @@ class AuthenticationService(
     }
 
     /**
-     * Get user by ID
+     * Get user by ID (returns DTO)
      */
-    fun getUserById(userId: String): User? {
-        return userRepository.findById(userId).orElse(null)
+    override fun getUserById(userId: String): UserResponse? {
+        return userRepository.findById(userId).orElse(null)?.toUserResponse()
     }
 
     /**
-     * Get user by email
+     * Get user by email (returns DTO)
      */
-    fun getUserByEmail(email: String): User? {
-        return userRepository.findByEmail(email).orElse(null)
+    override fun getUserByEmail(email: String): UserResponse? {
+        return userRepository.findByEmail(email).orElse(null)?.toUserResponse()
     }
 }
 
-/**
- * Extension function to convert User entity to UserResponse DTO
- */
-fun User.toUserResponse(): UserResponse {
-    return UserResponse(
-        id = this.id!!,
-        email = this.email,
-        username = this.username,
-        firstName = this.firstName,
-        lastName = this.lastName,
-        avatar = this.avatar,
-        emailVerified = this.emailVerified,
-        roles = this.roles,
-        isActive = this.isActive,
-        createdAt = this.createdAt.toString(),
-        lastLoginAt = this.lastLoginAt?.toString()
-    )
-}
