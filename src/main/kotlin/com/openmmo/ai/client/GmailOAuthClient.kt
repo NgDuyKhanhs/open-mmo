@@ -36,13 +36,18 @@ class GmailOAuthClient(
         logger.debug("Exchanging authorization code for tokens")
 
         try {
-            val body = mapOf(
+            // Build form-encoded body string
+            val bodyParams = mapOf(
                 "grant_type" to "authorization_code",
                 "code" to code,
                 "client_id" to clientId,
                 "client_secret" to clientSecret,
                 "redirect_uri" to redirectUri
             )
+
+            val bodyString = bodyParams.entries.joinToString("&") { (k, v) ->
+                "${java.net.URLEncoder.encode(k, "UTF-8")}=${java.net.URLEncoder.encode(v, "UTF-8")}"
+            }
 
             val headers = HttpHeaders().apply {
                 contentType = MediaType.APPLICATION_FORM_URLENCODED
@@ -52,7 +57,7 @@ class GmailOAuthClient(
             val response = restTemplate.exchange(
                 GOOGLE_TOKEN_URL,
                 HttpMethod.POST,
-                HttpEntity(body, headers),
+                HttpEntity(bodyString, headers),
                 Map::class.java
             ).body as? Map<String, Any> ?: emptyMap<String, Any>()
 
@@ -75,18 +80,27 @@ class GmailOAuthClient(
         logger.debug("Refreshing access token")
 
         try {
-            val body = mapOf(
+            // Build form-encoded body string
+            val bodyParams = mapOf(
                 "grant_type" to "refresh_token",
                 "refresh_token" to refreshToken,
                 "client_id" to clientId,
                 "client_secret" to clientSecret
             )
 
+            val bodyString = bodyParams.entries.joinToString("&") { (k, v) ->
+                "${java.net.URLEncoder.encode(k, "UTF-8")}=${java.net.URLEncoder.encode(v, "UTF-8")}"
+            }
+
+            val headers = HttpHeaders().apply {
+                contentType = MediaType.APPLICATION_FORM_URLENCODED
+            }
+
             @Suppress("UNCHECKED_CAST")
             val response = restTemplate.exchange(
                 GOOGLE_TOKEN_URL,
                 HttpMethod.POST,
-                HttpEntity(body),
+                HttpEntity(bodyString, headers),
                 Map::class.java
             ).body as? Map<String, Any> ?: throw IllegalStateException("No response from token endpoint")
 
