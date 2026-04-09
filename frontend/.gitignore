@@ -41,6 +41,8 @@ __screenshots__/
 # Environment & Secrets
 .env
 .env.local
+.env.production
+.env.production.local
 .env.*.local
 
 # Skills & Agent configs (local only)
