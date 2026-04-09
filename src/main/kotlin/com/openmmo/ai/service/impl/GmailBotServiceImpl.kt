@@ -95,14 +95,14 @@ class GmailBotServiceImpl(
 
         val config = botConfigRepository.findByUserId(userId)
 
-        // If customPrompt is null/empty, indicate using default prompt
+        // customPrompt can be empty string (use default) or have value (use custom)
         val customPrompt = config?.customPrompt ?: ""
         val isUsingDefault = customPrompt.isBlank()
 
         return mapOf(
             "customPrompt" to customPrompt,
             "isUsingDefault" to isUsingDefault.toString(),
-            "note" to if (isUsingDefault) "Using default prompt" else "Using custom prompt"
+            "status" to "success"
         )
     }
 
@@ -112,22 +112,15 @@ class GmailBotServiceImpl(
         val config = botConfigRepository.findByUserId(userId)
             ?: GmailBotConfig(userId = userId)
 
-        // If customPrompt is empty/blank, set to empty string (use default prompt)
-        // Otherwise, trim and save the custom prompt
-        val promptToSave = if (customPrompt.isBlank()) {
-            logger.debug("Custom prompt is empty, will use default prompt for user: $userId")
-            ""
-        } else {
-            logger.debug("Saving custom prompt for user: $userId")
-            customPrompt.trim()
-        }
+        // Always save customPrompt (even if empty), just trim whitespace
+        val promptToSave = customPrompt.trim()
 
         botConfigRepository.save(config.copy(customPrompt = promptToSave))
-        logger.debug("Gmail bot prompt updated for user: $userId")
+        logger.debug("Gmail bot prompt updated for user: $userId, isEmpty=${promptToSave.isBlank()}")
 
         return mapOf(
             "status" to "success",
-            "message" to if (promptToSave.isBlank()) "Using default prompt" else "Custom prompt saved"
+            "message" to if (promptToSave.isBlank()) "Prompt cleared, will use default" else "Custom prompt saved"
         )
     }
 }

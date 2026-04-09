@@ -22,7 +22,9 @@ interface IGmailApiService {
     fun getMailbox(userId: String, boxType: String, maxResults: Int = 20): List<MailboxItemResponse>
     fun searchMessages(userId: String, query: String, maxResults: Int = 10): List<String>
     fun getMessageBody(userId: String, messageId: String): String
+    fun getMessageHeaders(userId: String, messageId: String): Map<String, String>
     fun sendReply(userId: String, threadId: String, toEmail: String, subject: String, bodyText: String)
+    fun generateAiReply(userId: String, messageId: String): String
     fun modifyLabels(userId: String, messageId: String, addLabels: List<String>, removeLabels: List<String>)
     fun ensureLabel(userId: String, labelName: String): String
 }
@@ -39,4 +41,11 @@ interface IGmailBotService {
     fun updatePrompt(userId: String, customPrompt: String): Map<String, String>
 }
 
-
+/**
+ * Gemini AI Service Interface
+ * Handles AI-powered text generation for email replies
+ */
+interface IGeminiAiService {
+    fun generateReply(emailContent: String, customPrompt: String? = null): String
+    fun generateText(prompt: String): String
+}

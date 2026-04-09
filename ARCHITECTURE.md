@@ -13,15 +13,18 @@ src/main/kotlin/com/openmmo/ai/
 ├── service/                        [Business Logic Interfaces]
 │   ├── IAuthenticationService      - Auth contracts
 │   ├── IGmailService               - Gmail contracts (3 methods)
+│   ├── IGeminiAiService            - Gemini AI contracts
 │   └── impl/                       [Service Implementations]
 │       ├── AuthenticationServiceImpl
 │       ├── GmailOAuthServiceImpl
 │       ├── GmailApiServiceImpl
-│       └── GmailBotServiceImpl
+│       ├── GmailBotServiceImpl
+│       └── GeminiAiServiceImpl
 │
 ├── client/                         [HTTP Wrappers - NO Logic]
 │   ├── GmailOAuthClient            - Google OAuth API calls
-│   └── GmailApiClient              - Gmail API calls (base: gmail.api.base config)
+│   ├── GmailApiClient              - Gmail API calls (base: gmail.api.base config)
+│   └── GeminiApiClient             - Gemini AI API calls
 │
 ├── repository/                     [MongoDB Data Access - NO Logic]
 │   ├── UserRepository
@@ -187,6 +190,27 @@ POST /api/v1/gmail/send-reply
 
 ---
 
+### 4️⃣B GENERATE AI REPLY (NEW)
+
+```
+POST /api/v1/gmail/ai-reply?messageId={id}
+├─ Input: messageId (query parameter)
+├─ GmailController.generateAiReply()
+│  └─ GmailApiServiceImpl.generateAiReply()
+│     ├─ Get message body (GmailApiServiceImpl.getMessageBody)
+│     ├─ Get custom prompt from bot config (GmailBotConfigRepository.findByUserId)
+│     ├─ Generate reply (GeminiAiServiceImpl.generateReply)
+│     │  └─ GeminiApiClient.generateReply()
+│     │     └─ POST https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent
+│     │        ├─ Input: emailContent + customPrompt
+│     │        └─ Output: Generated reply text
+│     └─ Return reply text
+├─ Output: { status: "success", reply: "Generated text..." }
+└─ Status: 200 OK / 500 Error
+```
+
+---
+
 ### 5️⃣ BOT CONFIGURATION
 
 ```
@@ -299,6 +323,7 @@ POST /api/v1/gmail/bot/prompt
 | GET | /api/v1/gmail/search | ✅ | Search emails |
 | GET | /api/v1/gmail/message/{id} | ✅ | Get email details |
 | POST | /api/v1/gmail/send-reply | ✅ | Send reply |
+| POST | /api/v1/gmail/ai-reply | ✅ | Generate AI reply using Gemini |
 | GET | /api/v1/gmail/bot/status | ✅ | Get bot status |
 | POST | /api/v1/gmail/bot/enable | ✅ | Enable bot |
 | POST | /api/v1/gmail/bot/disable | ✅ | Disable bot |

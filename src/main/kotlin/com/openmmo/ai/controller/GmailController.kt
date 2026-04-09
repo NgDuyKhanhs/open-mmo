@@ -6,6 +6,7 @@ import com.openmmo.ai.dto.MailboxItemResponse
 import com.openmmo.ai.service.IGmailOAuthService
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailBotService
+import com.openmmo.ai.service.IGmailAutoReplyService
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -22,7 +23,8 @@ import org.springframework.web.servlet.view.RedirectView
 class GmailController(
     private val oauthService: IGmailOAuthService,
     private val apiService: IGmailApiService,
-    private val botService: IGmailBotService
+    private val botService: IGmailBotService,
+    private val autoReplyService: IGmailAutoReplyService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(GmailController::class.java)
@@ -135,6 +137,41 @@ class GmailController(
         val items = apiService.getMailbox(userId, box, max)
         logger.info("Successfully fetched ${items.size} emails from mailbox")
         return ResponseEntity.ok(items)
+    }
+
+    @PostMapping("/ai-reply")
+    fun generateAiReply(
+        @RequestParam messageId: String,
+        authentication: Authentication
+    ): ResponseEntity<Map<String, String>> {
+        val userId = authentication.name
+        logger.info("Generating AI reply for message: $messageId")
+        val aiReply = apiService.generateAiReply(userId, messageId)
+        return ResponseEntity.ok(mapOf(
+            "status" to "success",
+            "reply" to aiReply
+        ))
+    }
+
+    @PostMapping("/auto-reply")
+    fun triggerAutoReply(
+        authentication: Authentication
+    ): ResponseEntity<Map<String, Any>> {
+        val userId = authentication.name
+        logger.info("Manually triggering auto-reply for user: $userId")
+        val replied = autoReplyService.autoReplyForUser(userId)
+        return ResponseEntity.ok(mapOf(
+            "status" to "success",
+            "message" to "Auto-reply completed",
+            "emailsReplied" to replied
+        ))
+    }
+
+    @PostMapping("/auto-reply/all")
+    fun triggerAutoReplyAll(): ResponseEntity<Map<String, Any>> {
+        logger.info("Manually triggering auto-reply for all users")
+        val result = autoReplyService.autoReplyEmails()
+        return ResponseEntity.ok(result)
     }
 }
 

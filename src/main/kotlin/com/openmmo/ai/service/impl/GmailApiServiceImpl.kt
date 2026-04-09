@@ -6,6 +6,8 @@ import com.openmmo.ai.util.EncryptionUtil
 import com.openmmo.ai.dto.MailboxItemResponse
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailOAuthService
+import com.openmmo.ai.service.IGeminiAiService
+import com.openmmo.ai.repository.GmailBotConfigRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -27,7 +29,9 @@ data class MailboxItem(
 @Service
 class GmailApiServiceImpl(
     private val connectionRepository: GmailConnectionRepository,
+    private val botConfigRepository: GmailBotConfigRepository,
     private val oauthService: IGmailOAuthService,
+    private val geminiAiService: IGeminiAiService,
     private val gmailApiClient: GmailApiClient,
     @Value("\${token.enc.key-base64}") private val tokenEncKey: String
 ) : IGmailApiService {
@@ -101,6 +105,16 @@ class GmailApiServiceImpl(
         return extractBodyText(response)
     }
 
+    override fun getMessageHeaders(userId: String, messageId: String): Map<String, String> {
+        val connection = connectionRepository.findByUserId(userId)
+            ?: throw IllegalStateException("Gmail not connected")
+
+        val accessToken = getAccessToken(connection)
+        val response = gmailApiClient.getMessage(accessToken, messageId)
+
+        return extractHeaders(response)
+    }
+
     override fun sendReply(userId: String, threadId: String, toEmail: String, subject: String, bodyText: String) {
         val connection = connectionRepository.findByUserId(userId)
             ?: throw IllegalStateException("Gmail not connected")
@@ -109,19 +123,41 @@ class GmailApiServiceImpl(
 
         // Create a properly encoded MIME message with UTF-8 charset
         val rawMessage = """
-From: ${connection.gmailAddress}
-To: $toEmail
-Subject: =?UTF-8?B?${Base64.getEncoder().encodeToString("Re: $subject".toByteArray(Charsets.UTF_8))}?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset="UTF-8"
-Content-Transfer-Encoding: base64
-In-Reply-To: <$threadId@gmail.com>
-References: <$threadId@gmail.com>
-
-$bodyText
+            From: ${connection.gmailAddress}
+            To: $toEmail
+            Subject: =?UTF-8?B?${Base64.getEncoder().encodeToString("Re: $subject".toByteArray(Charsets.UTF_8))}?=
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset="UTF-8"
+            Content-Transfer-Encoding: base64
+            In-Reply-To: <$threadId@gmail.com>
+            References: <$threadId@gmail.com>
+            
+            $bodyText
         """.trimIndent()
 
         gmailApiClient.sendMessage(accessToken, rawMessage)
+    }
+
+    override fun generateAiReply(userId: String, messageId: String): String {
+        try {
+            logger.info("Generating AI reply for message: $messageId")
+
+            // Get message content
+            val emailContent = getMessageBody(userId, messageId)
+
+            // Get custom prompt if configured
+            val botConfig = botConfigRepository.findByUserId(userId)
+            val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
+
+            // Generate reply using Gemini
+            val aiReply = geminiAiService.generateReply(emailContent, customPrompt)
+            logger.debug("AI reply generated successfully, length: ${aiReply.length}")
+
+            return aiReply
+        } catch (e: Exception) {
+            logger.error("Failed to generate AI reply: ${e.message}", e)
+            throw e
+        }
     }
 
     override fun modifyLabels(userId: String, messageId: String, addLabels: List<String>, removeLabels: List<String>) {
@@ -218,6 +254,25 @@ $bodyText
         }
 
         return ""
+    }
+
+    private fun extractHeaders(response: Map<String, Any>?): Map<String, String> {
+        if (response == null) return emptyMap()
+
+        @Suppress("UNCHECKED_CAST")
+        val payload = response["payload"] as? Map<String, Any> ?: return emptyMap()
+
+        @Suppress("UNCHECKED_CAST")
+        val headersList = payload["headers"] as? List<Map<String, String>> ?: return emptyMap()
+
+        val headersMap = mutableMapOf<String, String>()
+        headersList.forEach { header ->
+            val name = header["name"] ?: return@forEach
+            val value = header["value"] ?: return@forEach
+            headersMap[name] = value
+        }
+
+        return headersMap
     }
 }
 
