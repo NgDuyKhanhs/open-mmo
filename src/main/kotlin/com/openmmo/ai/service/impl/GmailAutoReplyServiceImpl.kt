@@ -26,28 +26,28 @@ class GmailAutoReplyServiceImpl(
     }
 
     /**
-     * Auto-reply all emails for all connected users
+     * Auto-reply all emails for users with bot enabled
      * @return Map with statistics (totalProcessed, replied, errors)
      */
     override fun autoReplyEmails(): Map<String, Any> {
-        logger.info("Starting auto-reply for all users")
+        logger.info("Starting auto-reply for users with bot enabled")
 
         var totalProcessed = 0
         var totalReplied = 0
         var totalErrors = 0
 
         try {
-            // Get all users with Gmail connections
-            val connections = connectionRepository.findAll()
-            logger.info("Found ${connections.size} users with Gmail connections")
+            // Query only configs with bot enabled (more efficient than loading all)
+            val enabledConfigs = botConfigRepository.findByBotEnabledTrue()
+            logger.info("Found ${enabledConfigs.size} users with bot enabled")
 
-            connections.forEach { connection ->
+            enabledConfigs.forEach { config ->
                 try {
-                    val replied = autoReplyForUser(connection.userId)
+                    val replied = autoReplyForUser(config.userId)
                     totalReplied += replied
                     totalProcessed++
                 } catch (e: Exception) {
-                    logger.error("Error auto-replying for user ${connection.userId}: ${e.message}")
+                    logger.error("Error auto-replying for user ${config.userId}: ${e.message}")
                     totalErrors++
                 }
             }
