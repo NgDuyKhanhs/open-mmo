@@ -6,7 +6,7 @@ spring:
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/openmmo}
-      database: ${MONGODB_DATABASE:openmmo}
+      database: ${NAMEDB:openmmo}
       auto-index-creation: true
   
   # Spring AI Configuration
