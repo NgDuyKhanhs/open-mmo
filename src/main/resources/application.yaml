@@ -37,18 +37,22 @@ jwt:
 # ==============================================
 # OAuth2 Google Configuration
 # ==============================================
+# Set APP_API_URL environment variable to override:
+# Example: APP_API_URL=https://app.openmmo.ai
 oauth2:
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/google-callback}
+    redirect-uri: ${APP_API_URL:http://localhost:8080}/api/v1/auth/google-callback
 
 # ==============================================
 # Gmail OAuth Configuration
 # ==============================================
+# Set APP_API_URL environment variable to override:
+# Example: APP_API_URL=https://app.openmmo.ai
 gmail:
   oauth:
-    redirect-uri: ${GMAIL_OAUTH_REDIRECT_URI:http://localhost:8080/api/v1/gmail/connect/callback}
+    redirect-uri: ${APP_API_URL:http://localhost:8080}/api/v1/gmail/connect/callback
   api:
     base: ${GMAIL_API_BASE:https://www.googleapis.com/gmail/v1/users/me}
   app-web-url: ${APP_WEB_URL:http://localhost:5173}
