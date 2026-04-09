@@ -1,0 +1,101 @@
+# Production Environment Configuration
+# Do NOT commit sensitive values - use environment variables
+spring:
+  application:
+    name: ai
+
+  # MongoDB Configuration
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://mongodb:27017/openmmo}
+      database: ${MONGODB_DATABASE:openmmo}
+      auto-index-creation: true
+
+  # Spring AI Configuration
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+# ==============================================
+# JWT Configuration
+# ==============================================
+# IMPORTANT: In production, set JWT_SECRET environment variable
+jwt:
+  secret: ${JWT_SECRET:}
+  expiration: 86400000
+  refresh:
+    expiration: 604800000
+
+# ==============================================
+# OAuth2 Google Configuration
+# ==============================================
+oauth2:
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${APP_API_URL:https://app.openmmo.ai}/api/v1/auth/google-callback
+
+# ==============================================
+# Gmail OAuth Configuration
+# ==============================================
+gmail:
+  oauth:
+    redirect-uri: ${APP_API_URL:https://app.openmmo.ai}/api/v1/gmail/connect/callback
+  api:
+    base: ${GMAIL_API_BASE:https://www.googleapis.com/gmail/v1/users/me}
+  app-web-url: ${APP_WEB_URL:https://openmmo.ai}
+
+# ==============================================
+# CORS Configuration
+# ==============================================
+cors:
+  allowed-origins: ${CORS_ORIGINS:https://openmmo.ai,https://www.openmmo.ai,https://app.openmmo.ai}
+  allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+  allowed-headers: Authorization,Content-Type,X-Requested-With
+  allow-credentials: true
+  max-age: 3600
+
+# ==============================================
+# Logging Configuration - Production
+# ==============================================
+logging:
+  level:
+    root: WARN
+    org.springframework.data.mongodb: WARN
+    org.springframework.boot.autoconfigure: INFO
+    org.springframework.security: WARN
+    com.openmmo.ai: INFO
+  format:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%level] %logger{36} - %msg%n"
+
+# ==============================================
+# Application Configuration
+# ==============================================
+app:
+  name: OpenMMO AI Backend
+  description: AI integration backend for OpenMMO
+  version: 1.0.0-beta
+  web-url: ${APP_WEB_URL:https://openmmo.ai}
+
+# ==============================================
+# Token Encryption
+# ==============================================
+token:
+  enc:
+    key-base64: ${TOKEN_ENC_KEY_BASE64:}
+
+# ==============================================
+# Gemini Configuration
+# ==============================================
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+

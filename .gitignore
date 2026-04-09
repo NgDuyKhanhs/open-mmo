@@ -16,7 +16,6 @@ application-local.yaml
 application.properties
 application.properties.local
 application-dev.yaml
-application-prod.yaml
 *.key
 *.pem
 *.jks
