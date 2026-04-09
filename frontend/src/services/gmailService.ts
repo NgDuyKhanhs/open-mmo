@@ -66,6 +66,7 @@ function getHeaders(token: string): HeadersInit {
 /**
  * Ensure token is fresh (refresh if needed before API call)
  * Import from authStore dynamically to avoid circular dependency
+ * Note: RefreshToken is stored in HttpOnly cookie, not in authStore
  */
 async function ensureTokenFresh(token: string): Promise<string> {
   try {
@@ -76,24 +77,21 @@ async function ensureTokenFresh(token: string): Promise<string> {
     if (authStore.isTokenExpiringSoon(token, 5 * 60 * 1000)) {
       console.log('⚠️  Token expiring soon, attempting refresh...')
 
-      if (authStore.refreshToken) {
-        const refreshed = await authStore.refreshTokenManual()
-        if (refreshed && authStore.accessToken) {
-          console.log('Token refreshed successfully')
-          return authStore.accessToken
-        } else {
-          console.error('Token refresh failed')
-          throw new Error('Token refresh failed')
-        }
+      // Refresh token is in HttpOnly cookie (auto-managed by browser)
+      // Just call refreshTokenManual, it will use cookie automatically
+      const refreshed = await authStore.refreshTokenManual()
+      if (refreshed && authStore.accessToken) {
+        console.log('✅ Token refreshed successfully')
+        return authStore.accessToken
       } else {
-        console.error('No refresh token available')
-        throw new Error('No refresh token available')
+        console.error('❌ Token refresh failed')
+        throw new Error('Token refresh failed')
       }
     }
 
     return token
   } catch (error) {
-    console.error('Error in ensureTokenFresh:', error)
+    console.error('❌ Error in ensureTokenFresh:', error)
     throw error
   }
 }

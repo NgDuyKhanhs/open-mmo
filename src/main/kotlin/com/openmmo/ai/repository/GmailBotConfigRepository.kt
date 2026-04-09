@@ -6,6 +6,6 @@ import org.springframework.data.mongodb.repository.MongoRepository
 interface GmailBotConfigRepository : MongoRepository<GmailBotConfig, String> {
     fun findByUserId(userId: String): GmailBotConfig?
 
-    fun findByBotEnabledTrue(): List<GmailBotConfig>
+    fun findByEnabledTrue(): List<GmailBotConfig>
 }
 

@@ -449,6 +449,148 @@ Response Format:
 
 ---
 
+## 🧠 CORRESPONDENT MEMORY (Per-User, Per-Correspondent)
+
+### Overview
+Implements intelligent memory management per correspondent to improve reply quality over time.
+Each (userId, correspondentEmail) pair has its own memory with:
+- **profileSummary**: Context/relationship/key insights
+- **facts**: Structured key-value pairs with confidence scores
+- **stylePrefs**: Language, tone, formatting preferences
+
+### Architecture
+
+```
+correspondent_memory Collection (MongoDB)
+├── userId (String, indexed)
+├── correspondentEmail (String, lowercase, unique per user)
+├── profileSummary (String, max 3000 chars)
+├── facts (List<MemoryFact>)
+│   ├── key (String, snake_case)
+│   ├── value (String)
+│   ├── confidence (Double 0.0-1.0)
+│   └── sourceMessageId (String)
+├── stylePrefs
+│   ├── language ("vi", "en", null)
+│   ├── tone ("friendly", "formal", "professional", null)
+│   └── formattingNotes (String, null)
+└── Metadata: lastSeenAt, lastThreadId, version, createdAt, updatedAt
+```
+
+### Flow: Auto-Reply with Memory
+
+```
+1. Load Memory
+   ├─ CorrespondentMemoryService.getOrCreate(userId, correspondentEmail)
+   └─ Build context: buildMemoryContextText()
+
+2. Generate Reply
+   ├─ GmailAutoReplyServiceImpl.autoReplyForUser()
+   │  ├─ Get message (headers, body, threadId)
+   │  ├─ Extract correspondent email
+   │  └─ GmailApiServiceImpl.generateAiReplyWithMemory()
+   │     ├─ Build full prompt (base + custom + memory + email)
+   │     └─ GeminiApiClient.generateText(fullPrompt)
+
+3. Send & Update Memory
+   ├─ gmailApiService.sendReply()
+   ├─ Apply AI_BOT_REPLY label
+   └─ correspondentMemoryService.updateAfterReply()
+      ├─ Call Gemini to extract facts (JSON response)
+      ├─ Parse & merge (handle sensitive data)
+      ├─ Update summary + facts + stylePrefs
+      └─ Save to MongoDB
+```
+
+### Sensitive Data Detection
+
+**Patterns blocked** (not stored in memory):
+- OTP / verification codes (4-8 digits + keyword)
+- password, token, api key, secret
+- credit card, cvv, ssn, cccd, cmnd
+- Custom detection: regex + keyword matching
+
+**Behavior**:
+- If sensitive detected → skip fact updates
+- May update summary generically or skip
+- Never store PII/credentials
+
+### Fact Merge Rules
+
+```
+1. Normalize key: lowercase + snake_case
+2. If key exists:
+   ├─ Update if confidence(new) > confidence(old)
+   └─ Keep if confidence(new) <= confidence(old)
+3. If key is new: add it
+4. Cap facts at 30 (remove lowest confidence if exceeded)
+```
+
+### Memory Context Size Limits
+
+```
+- Max Summary: 3000 chars (truncate from start if over)
+- Max Facts: 30 (sort by confidence, keep top 30)
+- Max Context Text: 2000 chars (for prompt injection)
+```
+
+### Endpoints
+
+```
+DELETE /api/v1/gmail/memory?correspondentEmail=...
+  ├─ Forget one correspondent
+  └─ Auth required (JWT)
+
+DELETE /api/v1/gmail/memory/all
+  ├─ Forget all correspondents for user
+  └─ Auth required (JWT)
+```
+
+### Implementation Details
+
+**CorrespondentMemoryServiceImpl**:
+- `getOrCreate()`: Load or create memory record
+- `buildMemoryContextText()`: Format for prompt injection
+- `updateAfterReply()`: Call Gemini to extract update (JSON)
+- `forgetCorrespondent()`: Delete one record
+- `forgetAll()`: Delete all for user
+- `detectSensitiveData()`: Pattern matching
+- `extractMemoryUpdate()`: Gemini JSON extraction
+- `mergeMemoryUpdate()`: Apply update safely
+
+**GmailApiServiceImpl** additions:
+- `getMessageMeta()`: Fetch threadId + labelIds
+- `generateAiReplyWithMemory()`: New method with context
+- `buildFullPrompt()`: Construct prompt with memory
+
+**GmailAutoReplyServiceImpl** integration:
+- Load memory before generating reply
+- Use `generateAiReplyWithMemory()` instead of `generateAiReply()`
+- Update memory after sending reply (async in MVP)
+
+### Testing
+
+**Unit tests** cover:
+- Email extraction from headers
+- Sensitive pattern detection
+- Memory context truncation
+- Fact merge rules (confidence logic)
+- Facts cap at 30 limit
+- Email normalization (lowercase, trim)
+
+See: `CorrespondentMemoryServiceImplTest.kt`
+
+### Future Enhancements
+
+- Async memory updates (non-blocking)
+- Manual memory editing UI
+- Memory export/import per correspondent
+- Automatic memory cleanup (archive old facts)
+- Memory conflict resolution (multiple sources)
+- Memory analytics (fact usage, confidence trends)
+
+---
+
 ## ✅ KEY PRINCIPLES
 
 ✅ **Thin Controllers** - No logic, only parse/validate/delegate
@@ -464,7 +606,7 @@ Response Format:
 
 ---
 
-*Last Updated: April 8, 2026*
-*Version: 1.0.0*
+*Last Updated: April 9, 2026*
+*Version: 1.1.0 (with Per-Correspondent Memory)*
 *Status: Production Ready ✅*
 

@@ -23,8 +23,10 @@ interface IGmailApiService {
     fun searchMessages(userId: String, query: String, maxResults: Int = 10): List<String>
     fun getMessageBody(userId: String, messageId: String): String
     fun getMessageHeaders(userId: String, messageId: String): Map<String, String>
+    fun getMessageMeta(userId: String, messageId: String): Map<String, Any>  // Get threadId + other metadata
     fun sendReply(userId: String, threadId: String, toEmail: String, subject: String, bodyText: String)
     fun generateAiReply(userId: String, messageId: String): String
+    fun generateAiReplyWithMemory(userId: String, messageId: String, memoryContext: String): String  // With memory context
     fun modifyLabels(userId: String, messageId: String, addLabels: List<String>, removeLabels: List<String>)
     fun ensureLabel(userId: String, labelName: String): String
 }

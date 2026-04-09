@@ -3,6 +3,7 @@ package com.openmmo.ai.service.impl
 import com.openmmo.ai.service.IGmailAutoReplyService
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailBotService
+import com.openmmo.ai.service.ICorrespondentMemoryService
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.repository.GmailConnectionRepository
 import org.slf4j.LoggerFactory
@@ -17,7 +18,8 @@ class GmailAutoReplyServiceImpl(
     private val gmailApiService: IGmailApiService,
     private val gmailBotService: IGmailBotService,
     private val botConfigRepository: GmailBotConfigRepository,
-    private val connectionRepository: GmailConnectionRepository
+    private val connectionRepository: GmailConnectionRepository,
+    private val correspondentMemoryService: ICorrespondentMemoryService
 ) : IGmailAutoReplyService {
 
     companion object {
@@ -38,7 +40,7 @@ class GmailAutoReplyServiceImpl(
 
         try {
             // Query only configs with bot enabled (more efficient than loading all)
-            val enabledConfigs = botConfigRepository.findByBotEnabledTrue()
+            val enabledConfigs = botConfigRepository.findByEnabledTrue()
             logger.info("Found ${enabledConfigs.size} users with bot enabled")
 
             enabledConfigs.forEach { config ->
@@ -118,45 +120,80 @@ class GmailAutoReplyServiceImpl(
                     val emailContent = gmailApiService.getMessageBody(userId, messageId)
                     logger.debug("Email content length: ${emailContent.length}")
 
-                    // Generate AI reply
-                    logger.debug("Generating AI reply for: $messageId")
-                    val aiReply = gmailApiService.generateAiReply(userId, messageId)
-                    logger.debug("AI reply generated, length: ${aiReply.length}")
-
                     // Get email details to extract sender info (from Gmail message headers)
                     logger.debug("Fetching email headers for: $messageId")
                     val (emailFrom, emailSubject) = getEmailHeadersFromGmail(userId, messageId)
                     logger.debug("Extracted - From: $emailFrom, Subject: $emailSubject")
 
+                    // Get threadId
+                    val meta = gmailApiService.getMessageMeta(userId, messageId)
+                    val threadId = meta["threadId"] as? String ?: messageId
+
                     if (emailFrom.isNotEmpty() && emailSubject.isNotEmpty()) {
-                        // Send reply
-                        logger.debug("Sending reply to: $emailFrom")
-                        gmailApiService.sendReply(
-                            userId = userId,
-                            threadId = messageId,
-                            toEmail = emailFrom,
-                            subject = emailSubject,
-                            bodyText = aiReply
-                        )
-                        logger.debug("Reply sent successfully")
+                        // Load memory for this correspondent
+                        val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
+                        val memoryContext = correspondentMemoryService.buildMemoryContextText(memory)
 
-                        // Ensure AI_BOT_REPLY label exists
-                        logger.debug("Ensuring AI_BOT_REPLY label exists")
-                        val labelId = gmailApiService.ensureLabel(userId, AI_BOT_REPLY_LABEL)
-                        logger.debug("Label ID: $labelId")
+                        // Generate AI reply with memory context
+                        logger.debug("Generating AI reply with memory for: $messageId")
+                        val aiReply = gmailApiService.generateAiReplyWithMemory(userId, messageId, memoryContext)
+                        logger.debug("AI reply generated with memory, length: ${aiReply.length}")
 
-                        // Add AI_BOT_REPLY label and remove UNREAD
-                        logger.debug("Modifying labels for: $messageId")
-                        gmailApiService.modifyLabels(
-                            userId = userId,
-                            messageId = messageId,
-                            addLabels = listOf(labelId),
-                            removeLabels = listOf("UNREAD")
-                        )
-                        logger.debug("Labels modified successfully")
+                        // Validate email before sending
+                        if (!emailFrom.contains("@")) {
+                            logger.warn("⚠️ Invalid recipient email format: $emailFrom, skipping reply")
+                        } else {
+                            // Send reply
+                            logger.debug("Sending reply to: $emailFrom (subject: $emailSubject)")
+                            try {
+                                gmailApiService.sendReply(
+                                    userId = userId,
+                                    threadId = threadId,
+                                    toEmail = emailFrom,
+                                    subject = emailSubject,
+                                    bodyText = aiReply
+                                )
+                                logger.debug("Reply sent successfully")
+                            } catch (e: Exception) {
+                                logger.error("Failed to send reply: ${e.message}", e)
+                                throw e
+                            }
 
-                        logger.info("✅ Successfully replied to email $messageId for user: $userId")
-                        repliedCount++
+                            // Ensure AI_BOT_REPLY label exists
+                            logger.debug("Ensuring AI_BOT_REPLY label exists")
+                            val labelId = gmailApiService.ensureLabel(userId, AI_BOT_REPLY_LABEL)
+                            logger.debug("Label ID: $labelId")
+
+                            // Add AI_BOT_REPLY label and remove UNREAD
+                            logger.debug("Modifying labels for: $messageId")
+                            gmailApiService.modifyLabels(
+                                userId = userId,
+                                messageId = messageId,
+                                addLabels = listOf(labelId),
+                                removeLabels = listOf("UNREAD")
+                            )
+                            logger.debug("Labels modified successfully")
+
+                            // Update memory with new correspondence
+                            logger.debug("Updating memory after reply for: $messageId")
+                            try {
+                                correspondentMemoryService.updateAfterReply(
+                                    userId = userId,
+                                    correspondentEmail = emailFrom,
+                                    threadId = threadId,
+                                    messageId = messageId,
+                                    emailSubject = emailSubject,
+                                    emailBody = emailContent,
+                                    replyBody = aiReply
+                                )
+                                logger.debug("Memory updated successfully")
+                            } catch (e: Exception) {
+                                logger.warn("Failed to update memory (non-fatal): ${e.message}")
+                            }
+
+                            logger.info("✅ Successfully replied to email $messageId for user: $userId")
+                            repliedCount++
+                        }
                     } else {
                         logger.warn("⚠️ Could not extract email details from message: $messageId (from=$emailFrom, subject=$emailSubject)")
                     }
@@ -190,20 +227,51 @@ class GmailAutoReplyServiceImpl(
             logger.debug("Gmail API headers - From: $emailFrom, Subject: $emailSubject")
 
             if (emailFrom.isNotEmpty() && emailSubject.isNotEmpty()) {
-                // Extract email address from "Name <email@example.com>" format
-                val emailMatch = Regex("<(.+?)>").find(emailFrom)
-                val cleanEmail = emailMatch?.groupValues?.get(1) ?: emailFrom
+                // Extract email address from various formats
+                val cleanEmail = extractEmailFromHeader(emailFrom)
 
-                logger.debug("Cleaned email: $cleanEmail")
-                return Pair(cleanEmail, emailSubject)
+                if (cleanEmail.isNotEmpty()) {
+                    logger.debug("Cleaned email: $cleanEmail")
+                    return Pair(cleanEmail, emailSubject)
+                } else {
+                    logger.warn("Could not extract email from From header: $emailFrom")
+                    return Pair("", emailSubject)
+                }
             }
 
             logger.debug("Missing headers - From: $emailFrom, Subject: $emailSubject")
             return Pair(emailFrom, emailSubject)
         } catch (e: Exception) {
-            logger.warn("Could not extract from Gmail API: ${e.message}")
+            logger.warn("Could not extract from Gmail API: ${e.message}", e)
             return Pair("", "")
         }
+    }
+
+    /**
+     * Extract email address from From header
+     * Handles formats: "Name <email@example.com>", "email@example.com", "Name email@example.com"
+     */
+    private fun extractEmailFromHeader(fromHeader: String): String {
+        // Try to extract from <...> format first
+        val angleMatch = Regex("<(.+?)>").find(fromHeader)
+        if (angleMatch != null) {
+            val email = angleMatch.groupValues.getOrNull(1)
+            if (!email.isNullOrEmpty() && email.contains("@")) {
+                return email.trim()
+            }
+        }
+
+        // Try to extract email using regex pattern
+        val emailMatch = Regex("([\\w.+-]+@[\\w.-]+\\.[a-zA-Z]{2,})").find(fromHeader)
+        if (emailMatch != null) {
+            val email = emailMatch.groupValues.getOrNull(0)
+            if (!email.isNullOrEmpty()) {
+                return email.trim()
+            }
+        }
+
+        logger.debug("Could not extract email from header: $fromHeader")
+        return ""
     }
 
     /**

@@ -27,6 +27,23 @@
       router.push('/login')
       return
     }
+
+    // Check if OAuth callback was successful
+    const connected = router.currentRoute.value.query.connected
+    const error = router.currentRoute.value.query.error
+
+    if (connected === '1') {
+      console.log('✅ Gmail OAuth successful!')
+      toast.success('Gmail connected successfully!')
+      // Clear query params
+      router.replace('/email-ai-bot')
+    } else if (error) {
+      console.error('❌ Gmail OAuth failed:', error)
+      toast.error(`Failed to connect Gmail: ${error}`)
+      // Clear query params
+      router.replace('/email-ai-bot')
+    }
+
     loadStatus()
   })
 

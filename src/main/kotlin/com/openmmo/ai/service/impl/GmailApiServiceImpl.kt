@@ -115,27 +115,57 @@ class GmailApiServiceImpl(
         return extractHeaders(response)
     }
 
+    override fun getMessageMeta(userId: String, messageId: String): Map<String, Any> {
+        val connection = connectionRepository.findByUserId(userId)
+            ?: throw IllegalStateException("Gmail not connected")
+
+        val accessToken = getAccessToken(connection)
+        val response = gmailApiClient.getMessage(accessToken, messageId)
+
+        return mapOf(
+            "threadId" to (response["threadId"] as? String ?: ""),
+            "labelIds" to (response["labelIds"] as? List<String> ?: emptyList())
+        )
+    }
+
     override fun sendReply(userId: String, threadId: String, toEmail: String, subject: String, bodyText: String) {
+        // Validate inputs
+        if (toEmail.isBlank()) {
+            logger.error("Cannot send reply: toEmail is blank")
+            throw IllegalArgumentException("Recipient email address is required")
+        }
+        if (toEmail.toLowerCase().contains("unknown") || !toEmail.contains("@")) {
+            logger.error("Cannot send reply: invalid email address: $toEmail")
+            throw IllegalArgumentException("Invalid recipient email address: $toEmail")
+        }
+
         val connection = connectionRepository.findByUserId(userId)
             ?: throw IllegalStateException("Gmail not connected")
 
         val accessToken = getAccessToken(connection)
 
-        // Create a properly encoded MIME message with UTF-8 charset
+        logger.debug("Sending reply: from=${connection.gmailAddress}, to=$toEmail, subject=$subject")
+
+        // Create MIME message with proper encoding
+        // Body text needs to be base64 encoded for Gmail API
+        val encodedBody = Base64.getEncoder().encodeToString(bodyText.toByteArray(Charsets.UTF_8))
+
         val rawMessage = """
-            From: ${connection.gmailAddress}
-            To: $toEmail
-            Subject: =?UTF-8?B?${Base64.getEncoder().encodeToString("Re: $subject".toByteArray(Charsets.UTF_8))}?=
-            MIME-Version: 1.0
-            Content-Type: text/plain; charset="UTF-8"
-            Content-Transfer-Encoding: base64
-            In-Reply-To: <$threadId@gmail.com>
-            References: <$threadId@gmail.com>
-            
-            $bodyText
+From: ${connection.gmailAddress}
+To: $toEmail
+Subject: =?UTF-8?B?${Base64.getEncoder().encodeToString("Re: $subject".toByteArray(Charsets.UTF_8))}?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: base64
+In-Reply-To: <$threadId@gmail.com>
+References: <$threadId@gmail.com>
+
+$encodedBody
         """.trimIndent()
 
+        logger.debug("MIME message preview (first 200 chars): ${rawMessage.take(200)}")
         gmailApiClient.sendMessage(accessToken, rawMessage)
+        logger.debug("Message sent successfully to $toEmail")
     }
 
     override fun generateAiReply(userId: String, messageId: String): String {
@@ -156,6 +186,31 @@ class GmailApiServiceImpl(
             return aiReply
         } catch (e: Exception) {
             logger.error("Failed to generate AI reply: ${e.message}", e)
+            throw e
+        }
+    }
+
+    override fun generateAiReplyWithMemory(userId: String, messageId: String, memoryContext: String): String {
+        try {
+            logger.info("Generating AI reply with memory context for message: $messageId")
+
+            // Get message content
+            val emailContent = getMessageBody(userId, messageId)
+
+            // Get custom prompt if configured
+            val botConfig = botConfigRepository.findByUserId(userId)
+            val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
+
+            // Build full prompt with memory context
+            val fullPrompt = buildFullPrompt(emailContent, customPrompt, memoryContext)
+
+            // Generate reply using full prompt
+            val aiReply = geminiAiService.generateText(fullPrompt)
+            logger.debug("AI reply with memory generated successfully, length: ${aiReply.length}")
+
+            return aiReply
+        } catch (e: Exception) {
+            logger.error("Failed to generate AI reply with memory: ${e.message}", e)
             throw e
         }
     }
@@ -273,6 +328,33 @@ class GmailApiServiceImpl(
         }
 
         return headersMap
+    }
+
+    private fun buildFullPrompt(emailContent: String, customPrompt: String?, memoryContext: String): String {
+        val baseInstruction = "You are a helpful email assistant. Be concise, professional. Do not hallucinate. Reply without greeting/signature."
+
+        return buildString {
+            append(baseInstruction)
+            append("\n\n")
+
+            // Truncate custom prompt if too long (max 1500 chars)
+            if (customPrompt?.isNotBlank() == true) {
+                val truncatedPrompt = customPrompt
+                append("CONTEXT:\n")
+                append(truncatedPrompt)
+                append("\n\n")
+            }
+
+            // Only include memory if small enough
+            if (memoryContext.isNotBlank() && memoryContext.length < 500) {
+                append(memoryContext)
+                append("\n\n")
+            }
+
+            append("EMAIL:\n")
+            append(emailContent)
+            append("\n\nReply:")
+        }
     }
 }
 
