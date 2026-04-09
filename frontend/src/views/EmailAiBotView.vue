@@ -77,7 +77,8 @@
   const loadCustomPrompt = async () => {
     try {
       if (!authStore.accessToken) return
-      const response = await fetch('http://localhost:8080/api/v1/gmail/bot/prompt', {
+      const { API_CONFIG } = await import('@/config/apiConfig')
+      const response = await fetch(API_CONFIG.GMAIL.BOT_PROMPT, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

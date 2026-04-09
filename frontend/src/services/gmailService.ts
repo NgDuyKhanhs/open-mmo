@@ -1,10 +1,12 @@
 /**
  * Gmail API Service
- * Communicates with backend at http://localhost:8080/api/v1/gmail
+ * Communicates with backend Gmail endpoints
  * Handles Gmail OAuth, bot configuration, and mailbox operations
  */
 
-const API_BASE_URL = 'http://localhost:8080/api/v1/gmail'
+import { API_CONFIG } from '@/config/apiConfig'
+
+const API_BASE_URL = API_CONFIG.GMAIL.BASE
 
 // ============================================
 // INTERFACES
