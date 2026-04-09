@@ -6,7 +6,7 @@ spring:
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/openmmo}
-      database: ${NAMEDB:openmmo}
+      database: ${MONGODB_DATABASE:openmmo}
       auto-index-creation: true
   
   # Spring AI Configuration
@@ -26,8 +26,7 @@ server:
 # ==============================================
 # JWT Configuration
 # ==============================================
-# IMPORTANT: In production, set JWT_SECRET environment variable
-# Default below is 512-bit secret for HS512 algorithm
+# Set JWT_SECRET environment variable (required for production)
 jwt:
   secret: ${JWT_SECRET:}
   expiration: 86400000
@@ -62,10 +61,8 @@ gmail:
 # ==============================================
 # CORS Configuration  
 # ==============================================
-# When allowCredentials is true, allowedOrigins cannot be "*"
-# Use allowedOriginPatterns instead
-# Set CORS_ORIGINS environment variable for deployment
-# Example: CORS_ORIGINS=https://app.openmmo.ai,https://www.openmmo.ai
+# For local: allow "*" with allow-credentials=false
+# For prod: set CORS_ORIGINS explicitly with allow-credentials=true
 cors:
   allowed-origins: ${CORS_ORIGINS:*}
   allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
@@ -78,12 +75,12 @@ cors:
 # ==============================================
 logging:
   level:
-    org.springframework.data.mongodb: DEBUG
-    org.springframework.boot.autoconfigure: INFO
-    org.springframework.security: DEBUG
-    com.openmmo.ai: DEBUG
+    org.springframework.data.mongodb: ${LOG_LEVEL_MONGODB:DEBUG}
+    org.springframework.boot.autoconfigure: ${LOG_LEVEL_BOOT:INFO}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:DEBUG}
+    com.openmmo.ai: ${LOG_LEVEL:DEBUG}
   format:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%level] %logger{36} - %msg%n"
 
 # ==============================================
 # Application Configuration
