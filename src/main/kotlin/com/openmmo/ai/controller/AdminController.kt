@@ -9,14 +9,10 @@ import org.springframework.web.bind.annotation.*
 /**
  * Admin Controller
  * Admin-only operations for system management
+ * CORS is handled globally by CorsConfig
  */
 @RestController
 @RequestMapping("/api/v1/admin")
-@CrossOrigin(
-    origins = ["http://localhost:5173", "http://localhost:8080", "http://localhost:3000"],
-    maxAge = 3600,
-    allowCredentials = "true"
-)
 class AdminController(
     private val connectionRepository: GmailConnectionRepository,
     private val botConfigRepository: GmailBotConfigRepository

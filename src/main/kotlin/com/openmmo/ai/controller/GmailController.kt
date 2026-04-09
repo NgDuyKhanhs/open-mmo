@@ -15,11 +15,6 @@ import org.springframework.web.servlet.view.RedirectView
 
 @RestController
 @RequestMapping("/api/v1/gmail")
-@CrossOrigin(
-    origins = ["http://localhost:5173", "http://localhost:8080", "http://localhost:3000"],
-    maxAge = 3600,
-    allowCredentials = "true"
-)
 class GmailController(
     private val oauthService: IGmailOAuthService,
     private val apiService: IGmailApiService,

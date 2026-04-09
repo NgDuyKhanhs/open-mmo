@@ -13,14 +13,10 @@ import jakarta.servlet.http.HttpServletResponse
 /**
  * Authentication Controller
  * REST endpoints for user authentication and authorization
+ * CORS is handled globally by CorsConfig
  */
 @RestController
 @RequestMapping("/api/v1/auth")
-@CrossOrigin(
-    origins = ["http://localhost:5173", "http://localhost:8080", "http://localhost:3000"],
-    maxAge = 3600,
-    allowCredentials = "true"
-)
 class AuthenticationController(
     private val authenticationService: IAuthenticationService
 ) {
