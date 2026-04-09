@@ -38,22 +38,22 @@ jwt:
 # ==============================================
 # OAuth2 Google Configuration
 # ==============================================
-# Set GOOGLE_REDIRECT_URI environment variable:
-# Example: GOOGLE_REDIRECT_URI=https://app.openmmo.ai
+# Set APP_API_URL environment variable to base URL only:
+# Example: APP_API_URL=https://app.openmmo.ai
 oauth2:
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:https://app.openmmo.ai}/api/v1/auth/google-callback
+    redirect-uri: ${APP_API_URL:https://app.openmmo.ai}/api/v1/auth/google-callback
 
 # ==============================================
 # Gmail OAuth Configuration
 # ==============================================
-# Set GOOGLE_REDIRECT_URI environment variable:
-# Example: GOOGLE_REDIRECT_URI=https://app.openmmo.ai
+# Set APP_API_URL environment variable to base URL only:
+# Example: APP_API_URL=https://app.openmmo.ai
 gmail:
   oauth:
-    redirect-uri: ${GOOGLE_REDIRECT_URI:https://app.openmmo.ai}/api/v1/gmail/connect/callback
+    redirect-uri: ${APP_API_URL:https://app.openmmo.ai}/api/v1/gmail/connect/callback
   api:
     base: ${GMAIL_API_BASE:https://www.googleapis.com/gmail/v1/users/me}
   app-web-url: ${APP_WEB_URL:https://openmmo.ai}
