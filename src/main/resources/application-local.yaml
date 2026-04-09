@@ -48,11 +48,13 @@ oauth2:
 # ==============================================
 # CORS Configuration
 # ==============================================
+# For local development: allow localhost origins without credentials issues
+# allowCredentials is false to avoid CORS wildcard/pattern conflicts
 cors:
   allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:8080}
   allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
   allowed-headers: Authorization,Content-Type,X-Requested-With
-  allow-credentials: true
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
   max-age: 3600
 
 # ==============================================

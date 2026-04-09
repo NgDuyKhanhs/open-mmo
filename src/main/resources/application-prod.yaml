@@ -57,11 +57,13 @@ gmail:
 # ==============================================
 # CORS Configuration
 # ==============================================
+# For production: explicitly list allowed origins
+# allowCredentials is true since we're sending credentials (JWT tokens)
 cors:
   allowed-origins: ${CORS_ORIGINS:https://openmmo.ai,https://www.openmmo.ai,https://app.openmmo.ai}
   allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
   allowed-headers: Authorization,Content-Type,X-Requested-With
-  allow-credentials: true
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
   max-age: 3600
 
 # ==============================================

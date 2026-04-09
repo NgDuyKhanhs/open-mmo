@@ -8,7 +8,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 /**
  * Global CORS Configuration
  * Reads allowed origins from application.yaml via CORS_ORIGINS environment variable
- * This replaces individual @CrossOrigin annotations on controllers
+ *
+ * NOTE: When allowCredentials is true, wildcard "*" is not allowed.
+ * Use allowedOriginPatterns(".*") instead to support all origins with credentials.
+ * For production, explicitly list allowed origins (e.g., https://app.example.com)
  */
 @Configuration
 class CorsConfig(
@@ -21,7 +24,7 @@ class CorsConfig(
     @Value("\${cors.allowed-headers:Authorization,Content-Type,X-Requested-With}")
     private val allowedHeaders: String,
 
-    @Value("\${cors.allow-credentials:true}")
+    @Value("\${cors.allow-credentials:false}")
     private val allowCredentials: Boolean,
 
     @Value("\${cors.max-age:3600}")
@@ -29,22 +32,43 @@ class CorsConfig(
 ) : WebMvcConfigurer {
 
     override fun addCorsMappings(registry: CorsRegistry) {
-        // Parse origins from comma-separated string
-        val origins = allowedOrigins.split(",").map { it.trim() }.toTypedArray()
-
         // Parse methods from comma-separated string
         val methods = allowedMethods.split(",").map { it.trim() }.toTypedArray()
 
         // Parse headers from comma-separated string
         val headers = allowedHeaders.split(",").map { it.trim() }.toTypedArray()
 
-        registry
+        val corsRegistry = registry
             .addMapping("/**")
-            .allowedOrigins(*origins)
             .allowedMethods(*methods)
             .allowedHeaders(*headers)
-            .allowCredentials(allowCredentials)
             .maxAge(maxAge)
+
+        // Handle origins based on credentials requirement
+        if (allowCredentials) {
+            // When allowCredentials is true, wildcard "*" is NOT allowed
+            if (allowedOrigins.trim() == "*") {
+                // Use pattern to match all origins (but this won't send Access-Control-Allow-Credentials header)
+                // For production, it's better to explicitly list origins
+                corsRegistry.allowedOriginPatterns(".*")
+            } else {
+                // Parse and use explicit origins
+                val origins = allowedOrigins.split(",").map { it.trim() }.toTypedArray()
+                corsRegistry.allowedOrigins(*origins)
+            }
+        } else {
+            // When credentials are not needed, wildcard "*" is allowed
+            if (allowedOrigins.trim() == "*") {
+                corsRegistry.allowedOrigins("*")
+            } else {
+                val origins = allowedOrigins.split(",").map { it.trim() }.toTypedArray()
+                corsRegistry.allowedOrigins(*origins)
+            }
+        }
+
+        corsRegistry.allowCredentials(allowCredentials)
     }
 }
+
+
 

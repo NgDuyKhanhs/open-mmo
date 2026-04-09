@@ -60,11 +60,15 @@ gmail:
 # ==============================================
 # CORS Configuration  
 # ==============================================
+# When allowCredentials is true, allowedOrigins cannot be "*"
+# Use allowedOriginPatterns instead
+# Set CORS_ORIGINS environment variable for deployment
+# Example: CORS_ORIGINS=https://app.openmmo.ai,https://www.openmmo.ai
 cors:
   allowed-origins: ${CORS_ORIGINS:*}
   allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
   allowed-headers: Authorization,Content-Type,X-Requested-With
-  allow-credentials: true
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
   max-age: 3600
 
 # ==============================================

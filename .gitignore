@@ -12,7 +12,6 @@ build/
 .env.production.local
 .env.development.local
 .env.test.local
-application-local.yaml
 application.properties
 application.properties.local
 application-dev.yaml
