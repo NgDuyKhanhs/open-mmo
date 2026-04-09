@@ -67,7 +67,7 @@ cors:
   allowed-origins: ${CORS_ORIGINS:*}
   allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
   allowed-headers: Authorization,Content-Type,X-Requested-With
-  allow-credentials: ${CORS_ALLOW_CREDENTIALS:false}
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
   max-age: 3600
 
 # ==============================================
