@@ -281,6 +281,13 @@
     const keyword = status.value.triggerSubject.toLowerCase()
     return emails.value.filter(email => email.subject.toLowerCase().includes(keyword))
   })
+
+  // Extract email address from "Name <email@domain.com>" format
+  const extractEmail = (emailString: string): string => {
+    if (!emailString) return ''
+    const match = emailString.match(/<(.+?)>/)
+    return match ? match[1] : emailString
+  }
 </script>
 
 <template>
@@ -390,7 +397,7 @@
                     @click="selectEmail(email)"
                     class="email-item"
                   >
-                    <div class="email-from">{{ email.from }}</div>
+                    <div class="email-from">{{ extractEmail(email.from) }}</div>
                     <div class="email-subject">{{ email.subject }}</div>
                     <div class="email-snippet">{{ email.snippet }}</div>
                     <div class="email-date">{{ formatDate(email.date) }}</div>
@@ -612,7 +619,6 @@ Best regards</div>
   .orb-3 {
     width: 360px;
     height: 360px;
-    background: radial-gradient(circle, #00f0ff, transparent);
     top: 45%;
     left: 50%;
     transform: translate(-50%, -50%);
@@ -629,8 +635,9 @@ Best regards</div>
   .page-shell {
     position: relative;
     z-index: 2;
-    max-width: 1600px;
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
+    padding: 0;
   }
 
   /* ...existing code... */
@@ -640,6 +647,8 @@ Best regards</div>
     display: grid;
     grid-template-columns: 1fr;
     gap: 24px;
+    width: 100%;
+    height: 100%;
   }
 
   /* Not Connected Screen */
@@ -652,7 +661,7 @@ Best regards</div>
   }
 
   .not-connected-card {
-    background: rgba(12, 18, 32, 0.78);
+    background: transparent;
     border: 1px solid rgba(0, 240, 255, 0.16);
     border-radius: 20px;
     backdrop-filter: blur(10px);
@@ -861,7 +870,7 @@ Best regards</div>
 
   .status-info-card {
     padding: 16px;
-    background: rgba(0, 240, 255, 0.05);
+    background: transparent;
     border: 1px solid rgba(0, 240, 255, 0.12);
     border-radius: 12px;
     display: flex;
@@ -998,50 +1007,81 @@ Best regards</div>
 
   /* Main Content */
   .main-content {
-    background: rgba(12, 18, 32, 0.78);
+    background: transparent;
     border: 1px solid rgba(0, 240, 255, 0.16);
     border-radius: 16px;
     backdrop-filter: blur(10px);
     overflow: hidden;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     min-height: 700px;
+    position: relative;
   }
 
   .tab-header {
     display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(0, 240, 255, 0.1);
-    background: rgba(0, 240, 255, 0.03);
-    padding: 0;
+    flex-direction: column;
+    gap: 8px;
+    border-bottom: none;
+    border-right: 1px solid rgba(0, 240, 255, 0.1);
+    background: transparent;
+    padding: 16px;
+    align-items: stretch;
+    width: 160px;
+    height: auto;
+    flex-shrink: 0;
   }
 
   .tab-button {
-    flex: 1;
-    padding: 16px;
+    flex: 0 1 auto;
+    padding: 12px 14px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    justify-content: flex-start;
+    gap: 10px;
     border: none;
-    background: transparent;
+    background: rgba(0, 240, 255, 0.08);
     color: rgba(232, 247, 255, 0.6);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
-    transition: all 0.25s ease;
-    border-bottom: 2px solid transparent;
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    border-radius: 10px;
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .tab-button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
   }
 
   .tab-button:hover {
     color: #e8f7ff;
-    background: rgba(0, 240, 255, 0.05);
+    background: rgba(0, 240, 255, 0.12);
+    border-color: rgba(0, 240, 255, 0.3);
+  }
+
+  .tab-button:hover::before {
+    opacity: 1;
   }
 
   .tab-button.active {
     color: #00f0ff;
-    border-bottom-color: #00f0ff;
-    background: rgba(0, 240, 255, 0.08);
+    border-color: rgba(0, 240, 255, 0.5);
+    background: rgba(0, 240, 255, 0.15);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .tab-button.active::before {
+    opacity: 0;
   }
 
   .tab-icon {
@@ -1049,11 +1089,12 @@ Best regards</div>
   }
 
   .tab-content {
-    padding: 24px;
+    padding: 20px;
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 600px;
+    overflow: hidden;
   }
 
   /* Mailbox Section */
@@ -1063,9 +1104,7 @@ Best regards</div>
     gap: 8px;
     margin-bottom: 24px;
     padding: 12px;
-    background: rgba(0, 240, 255, 0.03);
     border-radius: 12px;
-    border: 1px solid rgba(0, 240, 255, 0.08);
   }
 
   .mailbox-tab {
@@ -1210,46 +1249,73 @@ Best regards</div>
   }
 
   .email-item {
-    padding: 12px;
-    border-radius: 10px;
+    padding: 14px;
+    border-radius: 12px;
     border: 1px solid rgba(0, 240, 255, 0.12);
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(0, 240, 255, 0.03);
     cursor: pointer;
     transition: all 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .email-item:hover {
     border-color: rgba(0, 240, 255, 0.25);
     background: rgba(0, 240, 255, 0.08);
-    transform: translateX(2px);
+    transform: translateX(4px);
+    box-shadow: 0 4px 12px rgba(0, 240, 255, 0.1);
+  }
+
+  .email-item.active {
+    border-color: rgba(0, 240, 255, 0.4);
+    background: rgba(0, 240, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15);
   }
 
   .email-from {
+    font-size: 13px;
+    font-weight: 600;
+    color: #00f0ff;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .email-from::before {
+    content: '📧';
     font-size: 12px;
-    color: rgba(232, 247, 255, 0.6);
-    margin-bottom: 4px;
   }
 
   .email-subject {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     color: #e8f7ff;
-    margin-bottom: 4px;
+    margin: 0;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .email-snippet {
     font-size: 12px;
     color: rgba(232, 247, 255, 0.6);
-    margin-bottom: 6px;
+    margin: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    line-height: 1.5;
   }
 
   .email-date {
     font-size: 11px;
     color: rgba(232, 247, 255, 0.4);
+    margin: 0;
+    margin-top: 4px;
   }
 
   /* Settings Section */
