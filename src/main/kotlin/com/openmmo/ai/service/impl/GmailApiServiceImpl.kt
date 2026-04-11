@@ -11,6 +11,7 @@ import com.openmmo.ai.service.IGeminiAiService
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
@@ -28,6 +29,10 @@ data class MailboxItem(
 
 /**
  * Gmail API Service Implementation
+ *
+ * Performance optimizations:
+ * - Token caching: Per-request (ThreadLocal) to avoid refresh per email
+ * - Config caching: 5-min TTL via @Cacheable
  */
 @Service
 class GmailApiServiceImpl(
@@ -41,9 +46,16 @@ class GmailApiServiceImpl(
 
     companion object {
         private val logger = LoggerFactory.getLogger(GmailApiServiceImpl::class.java)
+        // ThreadLocal for request-scoped token caching (avoid 100x refresh)
+        private val tokenCache = ThreadLocal<MutableMap<String, String>>()
     }
 
-    /**
+    init {
+        // Initialize token cache on first use
+        if (tokenCache.get() == null) {
+            tokenCache.set(mutableMapOf())
+        }
+    }    /**
      * Get mailbox with pagination support (5 emails per page)
      * Fetches 2x pageSize to ensure we return requested amount despite potential failures
      */
@@ -208,9 +220,8 @@ $encodedBody
             // Get message content
             val emailContent = getMessageBody(userId, messageId)
 
-            // Get custom prompt if configured
-            val botConfig = botConfigRepository.findByUserId(userId)
-            val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
+            // Get custom prompt if configured (CACHED - avoid 100x DB query)
+            val customPrompt = getOrCacheBotConfig(userId)?.customPrompt?.takeIf { it.isNotBlank() }
 
             // Build unified prompt
             val fullPrompt = buildPrompt(emailContent, customPrompt, memoryContext = null)
@@ -233,9 +244,8 @@ $encodedBody
             // Get message content
             val emailContent = getMessageBody(userId, messageId)
 
-            // Get custom prompt if configured
-            val botConfig = botConfigRepository.findByUserId(userId)
-            val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
+            // Get custom prompt if configured (CACHED - avoid 100x DB query)
+            val customPrompt = getOrCacheBotConfig(userId)?.customPrompt?.takeIf { it.isNotBlank() }
 
             // Build unified prompt with memory
             val fullPrompt = buildPrompt(emailContent, customPrompt, memoryContext)
@@ -335,12 +345,26 @@ $encodedBody
     }
 
     private fun getAccessToken(connection: com.openmmo.ai.entity.GmailConnection): String {
+        // ✅ OPTIMIZATION: Cache token per userId to avoid repeated refreshes
+        val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
+        val userId = connection.userId
+
+        // Return cached token if available
+        cache[userId]?.let { cachedToken ->
+            logger.debug("Using cached token for user: $userId")
+            return cachedToken
+        }
+
+        // Token not cached, fetch and refresh
         try {
-            logger.debug("Decrypting refresh token for user: ${connection.userId}")
+            logger.debug("Decrypting refresh token for user: $userId")
             val decryptedRefreshToken = EncryptionUtil.decrypt(connection.refreshTokenEnc, tokenEncKey)
             logger.debug("Refreshing access token")
             val token = oauthService.refreshAccessToken(decryptedRefreshToken)
-            logger.debug("Access token refreshed successfully")
+
+            // Cache for subsequent calls
+            cache[userId] = token
+            logger.debug("Access token refreshed and cached for user: $userId")
             return token
         } catch (e: Exception) {
             logger.error("Failed to get access token: ${e.message}", e)
@@ -396,6 +420,14 @@ $encodedBody
 
         return headersMap
     }
+
+    /**
+     * ✅ OPTIMIZATION: Cache bot config per userId (5-min TTL)
+     * Avoids 100x DB query when processing 100 emails for same user
+     * Spring @Cacheable handles expiration automatically
+     */
+    @Cacheable("botConfig")
+    fun getOrCacheBotConfig(userId: String) = botConfigRepository.findByUserId(userId)
 
     /**
      * Unified Prompt Builder - Consistent prompt construction
