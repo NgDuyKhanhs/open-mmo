@@ -31,6 +31,12 @@ export interface Email {
   labels: string[]
 }
 
+export interface MailboxPageResponse {
+  emails: Email[]
+  nextPageToken?: string
+  totalCount: number
+}
+
 export interface ConnectResponse {
   url: string
 }
@@ -243,28 +249,33 @@ export async function updateCustomPrompt(
 // ============================================
 
 /**
- * Get emails from a specific mailbox
+ * 🆕 Get emails from a specific mailbox with pagination
  * @param token - User's JWT access token
  * @param box - Mailbox name (INBOX, SENT, SPAM, TRASH)
- * @param max - Maximum number of emails to fetch (default: 20)
- * @returns Array of emails
+ * @param pageSize - Number of emails per page (default: 5)
+ * @param pageToken - Token for pagination (optional)
+ * @returns Paginated email response with nextPageToken
  */
-export async function getMailbox(
+export async function getMailboxPage(
   token: string,
   box: string = 'INBOX',
-  max: number = 20
-): Promise<Email[]> {
+  pageSize: number = 5,
+  pageToken?: string
+): Promise<MailboxPageResponse> {
   const freshToken = await ensureTokenFresh(token)
-  const url = new URL(`${API_BASE_URL}/mailbox`)
+  const url = new URL(`${API_BASE_URL}/mailbox-page`)
   url.searchParams.append('box', box)
-  url.searchParams.append('max', max.toString())
+  url.searchParams.append('pageSize', pageSize.toString())
+  if (pageToken) {
+    url.searchParams.append('pageToken', pageToken)
+  }
 
   const response = await fetch(url.toString(), {
     method: 'GET',
     headers: getHeaders(freshToken),
-    credentials: 'include', //  Send/receive cookies
+    credentials: 'include',
   })
-  return handleResponse<Email[]>(response)
+  return handleResponse<MailboxPageResponse>(response)
 }
 
 // ============================================

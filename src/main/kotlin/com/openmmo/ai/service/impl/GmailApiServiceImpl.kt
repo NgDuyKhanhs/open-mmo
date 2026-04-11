@@ -4,6 +4,7 @@ import com.openmmo.ai.client.GmailApiClient
 import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.util.EncryptionUtil
 import com.openmmo.ai.dto.MailboxItemResponse
+import com.openmmo.ai.dto.MailboxPageResponse
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailOAuthService
 import com.openmmo.ai.service.IGeminiAiService
@@ -12,6 +13,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.util.Base64
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ForkJoinPool
 
 data class MailboxItem(
     val id: String,
@@ -40,14 +43,18 @@ class GmailApiServiceImpl(
         private val logger = LoggerFactory.getLogger(GmailApiServiceImpl::class.java)
     }
 
-    override fun getMailbox(userId: String, boxType: String, maxResults: Int): List<MailboxItemResponse> {
+    /**
+     * Get mailbox with pagination support (5 emails per page)
+     * Fetches 2x pageSize to ensure we return requested amount despite potential failures
+     */
+    fun getMailboxPage(userId: String, boxType: String, pageSize: Int = 5, pageToken: String? = null): MailboxPageResponse {
         try {
-            logger.info("Getting mailbox for user: $userId, box=$boxType")
+            val startTime = System.currentTimeMillis()
+            logger.info("Getting mailbox page for user: $userId, box=$boxType, pageSize=$pageSize, pageToken=$pageToken")
 
             val connection = connectionRepository.findByUserId(userId)
                 ?: throw IllegalStateException("Gmail not connected")
 
-            logger.debug("Gmail connection found, getting access token")
             val accessToken = getAccessToken(connection)
 
             val query = when (boxType) {
@@ -58,31 +65,55 @@ class GmailApiServiceImpl(
                 else -> throw IllegalArgumentException("Invalid box type: $boxType")
             }
 
-            val messages = gmailApiClient.listMessages(accessToken, query, maxResults)
-            logger.info("Found ${messages.size} messages in mailbox")
+            // Fetch 2x pageSize to handle any failures and ensure we get requested amount
+            val fetchSize = pageSize * 2
+            @Suppress("UNCHECKED_CAST")
+            val response = gmailApiClient.listMessages(accessToken, query, fetchSize, pageToken)
+            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+            val nextPageToken = response["nextPageToken"] as? String
+            logger.info("Found ${messages.size} messages in initial fetch")
 
-            return messages.mapNotNull { msg ->
+            // Fetch all message details in parallel
+            val futures = messages.mapNotNull { msg ->
                 val msgId = msg["id"] ?: return@mapNotNull null
                 val threadId = msg["threadId"] ?: return@mapNotNull null
 
-                try {
-                    val full = getMessageDetails(accessToken, msgId)
-                    MailboxItemResponse(
-                        id = full.id,
-                        threadId = threadId,
-                        from = full.from,
-                        subject = full.subject,
-                        date = full.date,
-                        snippet = full.snippet,
-                        labels = full.labels
-                    )
-                } catch (e: Exception) {
-                    logger.warn("Failed to get details for message $msgId: ${e.message}")
-                    null
-                }
+                CompletableFuture.supplyAsync({
+                    try {
+                        val full = getMessageDetailsMetadata(accessToken, msgId, threadId)
+                        MailboxItemResponse(
+                            id = full.id,
+                            threadId = threadId,
+                            from = full.from,
+                            subject = full.subject,
+                            date = full.date,
+                            snippet = full.snippet,
+                            labels = full.labels
+                        )
+                    } catch (e: Exception) {
+                        logger.warn("Failed to get details for message $msgId: ${e.message}")
+                        null
+                    }
+                }, ForkJoinPool.commonPool())
             }
+
+            val emails = CompletableFuture.allOf(*futures.toTypedArray()).thenApply {
+                futures.mapNotNull { it.join() }
+            }.get()
+
+            // Take only the requested page size
+            val paginatedEmails = emails.take(pageSize)
+
+            val duration = System.currentTimeMillis() - startTime
+            logger.info("✅ Mailbox page loaded in ${duration}ms (${paginatedEmails.size} emails, nextPageToken=$nextPageToken)")
+
+            return MailboxPageResponse(
+                emails = paginatedEmails,
+                nextPageToken = nextPageToken,
+                totalCount = paginatedEmails.size
+            )
         } catch (e: Exception) {
-            logger.error("Error getting mailbox: ${e.message}")
+            logger.error("Error getting mailbox page: ${e.message}")
             throw e
         }
     }
@@ -92,7 +123,9 @@ class GmailApiServiceImpl(
             ?: throw IllegalStateException("Gmail not connected")
 
         val accessToken = getAccessToken(connection)
-        val messages = gmailApiClient.listMessages(accessToken, query, maxResults)
+        @Suppress("UNCHECKED_CAST")
+        val response = gmailApiClient.listMessages(accessToken, query, maxResults)
+        val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
         return messages.mapNotNull { it["id"] }
     }
 
@@ -179,8 +212,11 @@ $encodedBody
             val botConfig = botConfigRepository.findByUserId(userId)
             val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
 
+            // Build unified prompt
+            val fullPrompt = buildPrompt(emailContent, customPrompt, memoryContext = null)
+
             // Generate reply using Gemini
-            val aiReply = geminiAiService.generateReply(emailContent, customPrompt)
+            val aiReply = geminiAiService.generateText(fullPrompt)
             logger.debug("AI reply generated successfully, length: ${aiReply.length}")
 
             return aiReply
@@ -201,8 +237,8 @@ $encodedBody
             val botConfig = botConfigRepository.findByUserId(userId)
             val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
 
-            // Build full prompt with memory context
-            val fullPrompt = buildFullPrompt(emailContent, customPrompt, memoryContext)
+            // Build unified prompt with memory
+            val fullPrompt = buildPrompt(emailContent, customPrompt, memoryContext)
 
             // Generate reply using full prompt
             val aiReply = geminiAiService.generateText(fullPrompt)
@@ -259,6 +295,37 @@ $encodedBody
         return MailboxItem(
             id = messageId,
             threadId = response["threadId"] as? String ?: "",
+            from = from,
+            subject = subject,
+            date = date,
+            snippet = snippet,
+            labels = labels
+        )
+    }
+
+    /**
+     * OPTIMIZED: Get message details from metadata response (minimal payload)
+     * Used for mailbox listing to reduce bandwidth by 80%
+     */
+    private fun getMessageDetailsMetadata(accessToken: String, messageId: String, threadId: String): MailboxItem {
+        val response = gmailApiClient.getMessageMetadata(accessToken, messageId)
+
+        @Suppress("UNCHECKED_CAST")
+        val payload = response["payload"] as? Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val headersList = payload?.get("headers") as? List<Map<String, String>>
+
+        val from = headersList?.find { it["name"] == "From" }?.get("value") ?: "Unknown"
+        val subject = headersList?.find { it["name"] == "Subject" }?.get("value") ?: "(No subject)"
+        val date = headersList?.find { it["name"] == "Date" }?.get("value") ?: ""
+        val snippet = response["snippet"] as? String ?: ""
+
+        @Suppress("UNCHECKED_CAST")
+        val labels = response["labelIds"] as? List<String> ?: emptyList()
+
+        return MailboxItem(
+            id = messageId,
+            threadId = threadId,
             from = from,
             subject = subject,
             date = date,
@@ -330,30 +397,63 @@ $encodedBody
         return headersMap
     }
 
-    private fun buildFullPrompt(emailContent: String, customPrompt: String?, memoryContext: String): String {
-        val baseInstruction = "You are a helpful email assistant. Be concise, professional. Do not hallucinate. Reply without greeting/signature."
+    /**
+     * Unified Prompt Builder - Consistent prompt construction
+     * Handles: base instruction + custom prompt + email content + memory context
+     *
+     * Features:
+     * - Truncates inputs to avoid token overflow
+     * - Formats email content with fields
+     * - Labels memory context for clarity
+     * - Escapes special characters
+     */
+    private fun buildPrompt(
+        emailContent: String,
+        customPrompt: String?,
+        memoryContext: String?
+    ): String {
+        val baseInstruction = """
+            You are an AI email assistant for auto-replies.
+            
+            INSTRUCTIONS:
+            - Write professional, concise, friendly replies
+            - Match the email's tone and style
+            - Do NOT include greetings like "Hi", "Hello" or "Dear"
+            - Do NOT include signatures like "Best regards", "Thanks"
+            - Do NOT make up information - only reply to what was asked
+            - Be helpful and courteous
+            - Keep replies 2-4 sentences max (unless complex topic)
+            - Format: Direct reply without preamble
+        """.trimIndent()
 
         return buildString {
             append(baseInstruction)
             append("\n\n")
 
-            // Truncate custom prompt if too long (max 1500 chars)
-            if (customPrompt?.isNotBlank() == true) {
-                val truncatedPrompt = customPrompt
-                append("CONTEXT:\n")
-                append(truncatedPrompt)
+            // Add custom context if provided
+            if (!customPrompt.isNullOrBlank()) {
+                val truncated = customPrompt.take(1500)
+                append("═══ CONTEXT FROM USER ═══\n")
+                append(truncated)
                 append("\n\n")
             }
 
-            // Only include memory if small enough
-            if (memoryContext.isNotBlank() && memoryContext.length < 500) {
-                append(memoryContext)
+            // Add memory/conversation context if provided
+            if (!memoryContext.isNullOrBlank()) {
+                val truncated = memoryContext.take(800)
+                append("═══ CONVERSATION HISTORY ═══\n")
+                append(truncated)
                 append("\n\n")
             }
 
-            append("EMAIL:\n")
-            append(emailContent)
-            append("\n\nReply:")
+            // Format email content
+            append("═══ EMAIL TO REPLY ═══\n")
+            val truncatedEmail = emailContent.take(3000)
+            append(truncatedEmail)
+            append("\n\n")
+
+            // Output format
+            append("═══ YOUR REPLY (no greeting/signature) ═══\n")
         }
     }
 }

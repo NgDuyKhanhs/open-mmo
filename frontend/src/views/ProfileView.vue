@@ -152,7 +152,7 @@
 
 <style scoped>
   .profile-page {
-    min-height: 100vh;
+    max-height: 100vh;
     padding: 96px 32px 48px;
     color: #e8f7ff;
     position: relative;

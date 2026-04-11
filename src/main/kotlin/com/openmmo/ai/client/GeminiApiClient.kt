@@ -126,6 +126,8 @@ class GeminiApiClient(
      * @return Generated reply text
      */
     fun generateReply(emailContent: String, customPrompt: String? = null): String {
+        // NOTE: This method now uses unified buildPrompt from GmailApiServiceImpl
+        // Kept for backward compatibility but prefer buildPrompt() approach
         logger.debug("Generating email reply with custom prompt: ${customPrompt != null}")
 
         val prompt = if (customPrompt.isNullOrBlank()) {

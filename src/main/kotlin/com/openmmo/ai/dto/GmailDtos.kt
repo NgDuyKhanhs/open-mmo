@@ -23,6 +23,12 @@ data class MailboxItemResponse(
     val labels: List<String>
 )
 
+data class MailboxPageResponse(
+    val emails: List<MailboxItemResponse>,
+    val nextPageToken: String? = null,
+    val totalCount: Int = 0
+)
+
 data class GmailBotConfigRequest(
     val triggerSubject: String? = null,
     val customPrompt: String? = null,

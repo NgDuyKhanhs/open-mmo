@@ -12,9 +12,10 @@
     disableBot,
     updateBotConfig,
     updateCustomPrompt,
-    getMailbox,
+    getMailboxPage,
     type GmailStatus,
     type Email,
+    type MailboxPageResponse,
   } from '@/services/gmailService'
 
   const router = useRouter()
@@ -68,6 +69,16 @@
    const configPrompt = ref('')
    const showPromptHelp = ref(false)
    const activeTab = ref<'mailbox' | 'config' | 'status'>('mailbox')
+
+   // 🆕 Pagination state
+   const currentPageToken = ref<string | null>(null)
+   interface PageCache {
+     emails: Email[]
+     nextPageToken: string | null
+   }
+   const pageCache = ref<PageCache[]>([]) // Cache pages: [page1, page2, page3...]
+   const currentPageIndex = ref(0)
+   const hasNextPage = ref(false)
 
   // Load custom prompt when switching to config tab
   const switchToConfigTab = async () => {
@@ -123,57 +134,122 @@
     }
   }
 
-  // Load emails from selected mailbox
-  const loadEmails = async () => {
-    // Check cache first
-     const cacheKey = selectedBox.value
-     if (emailsCache.value.has(cacheKey)) {
-       emails.value = emailsCache.value.get(cacheKey) || []
-       return
-     }
+    // Load emails from selected mailbox with pagination
+    const loadEmails = async () => {
+      isLoading.value = true
+      try {
+        if (!authStore.accessToken) {
+          toast.error('Bạn cần đăng nhập để xem emails')
+          router.push('/login')
+          return
+        }
 
-    isLoading.value = true
-    try {
-      if (!authStore.accessToken) {
-        toast.error('Bạn cần đăng nhập để xem emails')
-        router.push('/login')
-        return
-      }
+        // Use pagination API (5 emails per page)
+        const response = await getMailboxPage(
+          authStore.accessToken,
+          selectedBox.value.toLowerCase(),
+          5,
+          undefined // Always start from first page (no token)
+        )
 
-      emails.value = await getMailbox(
-        authStore.accessToken,
-        selectedBox.value.toLowerCase(),
-        20
-      )
-      // Cache the emails
-      emailsCache.value.set(cacheKey, emails.value)
-    } catch (err) {
-      console.error('Failed to load emails:', err)
-      if (err instanceof Error && err.message.includes('401')) {
-        const refreshed = await authStore.refreshTokenManual()
-        if (refreshed && authStore.accessToken) {
-          try {
-            emails.value = await getMailbox(
-              authStore.accessToken,
-              selectedBox.value.toLowerCase(),
-              20
-            )
-            // Cache the emails
-            emailsCache.value.set(cacheKey, emails.value)
-          } catch (retryErr) {
-            toast.error(retryErr instanceof Error ? retryErr.message : 'Error loading emails')
+        emails.value = response.emails
+        currentPageToken.value = response.nextPageToken || null
+
+        // Initialize page cache for first page
+        pageCache.value = [{
+          emails: response.emails,
+          nextPageToken: response.nextPageToken || null
+        }]
+        currentPageIndex.value = 0
+        hasNextPage.value = !!response.nextPageToken
+
+
+      } catch (err) {
+        console.error('Failed to load emails:', err)
+        if (err instanceof Error && err.message.includes('401')) {
+          const refreshed = await authStore.refreshTokenManual()
+          if (refreshed && authStore.accessToken) {
+            try {
+              const response = await getMailboxPage(
+                authStore.accessToken,
+                selectedBox.value.toLowerCase(),
+                5,
+                undefined
+              )
+              emails.value = response.emails
+              hasNextPage.value = !!response.nextPageToken
+            } catch (retryErr) {
+              toast.error(retryErr instanceof Error ? retryErr.message : 'Error loading emails')
+            }
+          } else {
+            toast.error('Session expired, please login again')
+            router.push('/login')
           }
         } else {
-          toast.error('Session expired, please login again')
-          router.push('/login')
+          toast.error(err instanceof Error ? err.message : 'Error loading emails')
         }
-      } else {
-        toast.error(err instanceof Error ? err.message : 'Error loading emails')
+      } finally {
+        isLoading.value = false
       }
-    } finally {
-      isLoading.value = false
     }
-  }
+
+    // Load previous page - use cached data
+    const loadPreviousPage = async () => {
+      if (currentPageIndex.value <= 0) return
+
+      isLoading.value = true
+      try {
+        // Move back one position
+        currentPageIndex.value--
+        const cachedPage = pageCache.value[currentPageIndex.value]
+
+        if (cachedPage) {
+          emails.value = cachedPage.emails
+          currentPageToken.value = cachedPage.nextPageToken || null
+          hasNextPage.value = !!cachedPage.nextPageToken
+          window.scrollTo(0, 0)
+        }
+      } catch (err) {
+        currentPageIndex.value++
+        toast.error(err instanceof Error ? err.message : 'Error loading previous page')
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    // Load next page
+    const loadNextPage = async () => {
+      if (!hasNextPage.value || isLoading.value || !authStore.accessToken) return
+
+      isLoading.value = true
+      try {
+        // Get next page from API using current token
+        const response = await getMailboxPage(
+          authStore.accessToken,
+          selectedBox.value.toLowerCase(),
+          5,
+          currentPageToken.value || undefined
+        )
+
+        emails.value = response.emails
+        currentPageToken.value = response.nextPageToken || null
+
+        // Cache this page
+        currentPageIndex.value++
+        pageCache.value.push({
+          emails: response.emails,
+          nextPageToken: response.nextPageToken || null
+        })
+
+        hasNextPage.value = !!response.nextPageToken
+
+        window.scrollTo(0, 0)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Error loading next page')
+      } finally {
+        isLoading.value = false
+      }
+    }
 
   // Connect Gmail
   const connectGmail = async () => {
@@ -247,24 +323,11 @@
      await loadEmails()
    }
 
-   // Refresh emails - clear cache and reload current mailbox
-   const refreshEmails = async () => {
-     if (isLoading.value) {
-       toast.warning('⏳ Already loading emails')
-       return
-     }
-     // Clear cache for current mailbox
-     emailsCache.value.delete(selectedBox.value)
-     toast.info('Refreshing emails...')
-     await loadEmails()
-     toast.success('Emails refreshed!')
+   // Select email and show preview
+   const selectEmail = (email: Email) => {
+     selectedEmail.value = email
+     showModal.value = true
    }
-
-  // Select email and show preview
-  const selectEmail = (email: Email) => {
-    selectedEmail.value = email
-    showModal.value = true
-  }
 
   // Close modal
   const closeModal = () => {
@@ -408,21 +471,13 @@
                       :class="['mailbox-tab', { active: selectedBox === box }]"
                       :title="`View ${box} emails`"
                       :disabled="isLoading"
-                    >
-                      <span class="mailbox-label">{{ box.charAt(0).toUpperCase() + box.slice(1) }}</span>
-                    </button>
-                  </div>
-                  <button
-                    @click="refreshEmails"
-                    class="refresh-btn"
-                    :disabled="isLoading"
-                    title="Refresh current mailbox"
-                  >
-                    <RefreshCw :size="18" class="refresh-icon" />
-                  </button>
-                </div>
+                     >
+                       <span class="mailbox-label">{{ box.charAt(0).toUpperCase() + box.slice(1) }}</span>
+                     </button>
+                   </div>
+                 </div>
 
-              <div class="email-list">
+               <div class="email-list">
                    <div v-if="isLoading" class="loading-state">
                    <div class="spinner"></div>
                    <span>Loading emails...</span>
@@ -452,6 +507,27 @@
                   </div>
                 </div>
               </div>
+
+                <!-- Pagination Controls -->
+                <div v-if="emails.length > 0" class="pagination-controls">
+                  <button
+                    @click="loadPreviousPage"
+                    class="pagination-btn pagination-btn-prev"
+                    :disabled="isLoading || currentPageIndex <= 0"
+                    title="Previous page"
+                  >
+                    ← Previous
+                  </button>
+                  <div class="pagination-spacer"></div>
+                  <button
+                    @click="loadNextPage"
+                    class="pagination-btn pagination-btn-next"
+                    :disabled="isLoading || !hasNextPage"
+                    title="Next page"
+                  >
+                    Next →
+                  </button>
+                </div>
             </div>
 
              <!-- Settings Tab -->
@@ -461,7 +537,7 @@
               <div class="config-form">
                 <!-- Trigger Subject -->
                 <div class="form-section">
-                  <label class="form-label">Trigger Subject Keyword</label>
+                  <label class="form-label">Subject Keyword</label>
                   <p class="form-description">
                     Bot will only respond to emails containing this keyword
                   </p>
@@ -478,13 +554,13 @@
                 <!-- Custom Prompt -->
                 <div class="form-section">
                   <div class="label-row">
-                    <label class="form-label">Custom AI Prompt</label>
+                    <label class="form-label">Custom Prompt (Optional)</label>
                     <button @click="showPromptHelp = true" class="help-button" title="View examples">
                       <HelpCircle size="16" />
                     </button>
                   </div>
                   <p class="form-description">
-                    Optional. Customize how AI responds. Use placeholders: {subject}, {senderEmail}, {body}
+                    Customize how AI responds
                   </p>
                   <textarea
                     v-model="configPrompt"
@@ -670,8 +746,8 @@ Best regards</div>
   }
 
   .email-bot-page {
-    min-height: 100vh;
-    padding-top: 40px;
+    max-height: 100vh;
+    padding-top: 60px;
     color: #e8f7ff;
     position: relative;
     overflow: hidden;
@@ -1108,7 +1184,6 @@ Best regards</div>
     overflow: hidden;
     display: flex;
     flex-direction: row;
-    min-height: 700px;
     position: relative;
   }
 
@@ -1187,7 +1262,6 @@ Best regards</div>
      flex: 1;
      display: flex;
      flex-direction: column;
-     min-height: 600px;
      overflow: hidden;
    }
 
@@ -1417,70 +1491,140 @@ Best regards</div>
     gap: 8px;
   }
 
-  .email-item {
-    padding: 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(0, 240, 255, 0.12);
-    background: rgba(0, 240, 255, 0.03);
-    cursor: pointer;
-    transition: all 0.25s ease;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .email-item:hover {
-    border-color: rgba(0, 240, 255, 0.25);
-    background: rgba(0, 240, 255, 0.08);
-    transform: translateX(4px);
-    box-shadow: 0 4px 12px rgba(0, 240, 255, 0.1);
-  }
-
-  .email-item.active {
-    border-color: rgba(0, 240, 255, 0.4);
-    background: rgba(0, 240, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15);
-  }
-
-   .email-from {
-     font-size: 13px;
-     font-weight: 600;
-     color: #00f0ff;
-     margin: 0;
-     display: flex;
-     align-items: center;
-     gap: 8px;
+   .email-item {
+     padding: 12px 14px;
+     border-radius: 10px;
+     border: 1px solid rgba(0, 240, 255, 0.12);
+     background: rgba(0, 240, 255, 0.03);
+     cursor: pointer;
+     transition: all 0.25s ease;
+     display: grid;
+     grid-template-columns: 1fr auto;
+     grid-template-rows: auto auto auto;
+     gap: 4px 12px;
+     position: relative;
+     min-height: 60px;
    }
 
-   .email-subject {
-    font-size: 14px;
-    font-weight: 700;
-    color: #e8f7ff;
-    margin: 0;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+   .email-item:hover {
+     border-color: rgba(0, 240, 255, 0.25);
+     background: rgba(0, 240, 255, 0.08);
+     transform: translateX(4px);
+     box-shadow: 0 4px 12px rgba(0, 240, 255, 0.1);
+   }
 
-  .email-snippet {
-    font-size: 12px;
-    color: rgba(232, 247, 255, 0.6);
-    margin: 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    line-height: 1.5;
-  }
+   .email-item.active {
+     border-color: rgba(0, 240, 255, 0.4);
+     background: rgba(0, 240, 255, 0.12);
+     box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15);
+   }
 
-  .email-date {
-    font-size: 11px;
-    color: rgba(232, 247, 255, 0.4);
-    margin: 0;
-    margin-top: 4px;
-  }
+    .email-from {
+      font-size: 12px;
+      font-weight: 600;
+      color: #00f0ff;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      grid-column: 1;
+      grid-row: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .email-subject {
+     font-size: 13px;
+     font-weight: 700;
+     color: #e8f7ff;
+     margin: 0;
+     line-height: 1.3;
+     display: -webkit-box;
+     -webkit-line-clamp: 1;
+     -webkit-box-orient: vertical;
+     overflow: hidden;
+     grid-column: 1;
+     grid-row: 2;
+   }
+
+   .email-snippet {
+     font-size: 11px;
+     color: rgba(232, 247, 255, 0.55);
+     margin: 0;
+     display: -webkit-box;
+     -webkit-line-clamp: 1;
+     -webkit-box-orient: vertical;
+     overflow: hidden;
+     line-height: 1.4;
+     grid-column: 1;
+     grid-row: 3;
+   }
+
+   .email-date {
+     font-size: 10px;
+     color: rgba(232, 247, 255, 0.45);
+     margin: 0;
+     grid-column: 2;
+     grid-row: 1 / 3;
+     display: flex;
+     align-items: center;
+     justify-content: flex-end;
+     text-align: right;
+     white-space: nowrap;
+     padding-left: 8px;
+   }
+
+   /* Pagination Controls */
+   .pagination-controls {
+     display: flex;
+     justify-content: space-between;
+     align-items: center;
+     gap: 12px;
+     padding: 14px 12px;
+     margin-top: 8px;
+     border-radius: 0 0 10px 10px;
+   }
+
+   .pagination-spacer {
+     flex: 1;
+   }
+
+   .pagination-btn {
+     padding: 8px 14px;
+     border: 1px solid rgba(0, 240, 255, 0.15);
+     background: rgba(0, 240, 255, 0.05);
+     color: #00f0ff;
+     border-radius: 8px;
+     font-size: 12px;
+     font-weight: 600;
+     cursor: pointer;
+     transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+     white-space: nowrap;
+     font-family: inherit;
+   }
+
+   .pagination-btn:hover:not(:disabled) {
+     border-color: rgba(0, 240, 255, 0.3);
+     background: rgba(0, 240, 255, 0.12);
+     transform: translateY(-1px);
+     box-shadow: 0 4px 8px rgba(0, 240, 255, 0.08);
+   }
+
+   .pagination-btn:active:not(:disabled) {
+     transform: translateY(0);
+   }
+
+   .pagination-btn:disabled {
+     opacity: 0.35;
+     cursor: not-allowed;
+     border-color: rgba(0, 240, 255, 0.08);
+   }
+
+   .pagination-btn-prev,
+   .pagination-btn-next {
+     min-width: 90px;
+   }
 
   /* Settings Section */
   .settings-section {
@@ -2186,37 +2330,371 @@ Best regards</div>
       background: rgba(255, 180, 0, 0.15);
     }
 
-    /* Responsive */
-    @media (max-width: 768px) {
-     .mailbox-selector {
-       grid-template-columns: repeat(2, 1fr);
+     /* Responsive */
+     @media (max-width: 768px) {
+      .email-bot-page {
+        padding-top: 20px;
+      }
+
+      .main-content {
+        flex-direction: column;
+        min-height: auto;
+        border-radius: 12px;
+      }
+
+      .tab-header {
+        flex-direction: row;
+        gap: 4px;
+        border-right: none;
+        border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+        padding: 8px;
+        width: 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+      }
+
+      .tab-button {
+        height: 40px;
+        padding: 8px 12px;
+        font-size: 12px;
+        flex: 0 0 auto;
+      }
+
+      .tab-content {
+        min-height: auto;
+        padding: 12px;
+        max-height: calc(100vh - 180px);
+      }
+
+      .mailbox-header {
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .mailbox-selector {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 8px;
+        gap: 6px;
+      }
+
+      .mailbox-tab {
+        padding: 8px 10px;
+        font-size: 11px;
+        flex: 1;
+      }
+
+      .refresh-btn {
+        width: 36px;
+        height: 36px;
+      }
+
+      .email-list {
+        gap: 6px;
+        padding-right: 4px;
+      }
+
+      .email-item {
+        padding: 10px;
+        gap: 3px 8px;
+        min-height: 50px;
+      }
+
+      .email-from {
+        font-size: 11px;
+        gap: 4px;
+      }
+
+      .email-subject {
+        font-size: 12px;
+      }
+
+      .email-snippet {
+        font-size: 10px;
+        -webkit-line-clamp: 1;
+      }
+
+      .email-date {
+        font-size: 9px;
+      }
+
+      .pagination-controls {
+        padding: 10px 8px;
+        gap: 8px;
+      }
+
+      .pagination-btn {
+        padding: 6px 10px;
+        font-size: 11px;
+        min-width: 70px;
+      }
+
+      .pagination-btn-prev,
+      .pagination-btn-next {
+        min-width: 70px;
+      }
+
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .primary-connection-card {
+        flex-direction: column;
+        text-align: center;
+        gap: 16px;
+        padding: 16px;
+      }
+
+      .connection-icon {
+        width: 48px;
+        height: 48px;
+      }
+
+      .connection-info {
+        align-items: center;
+      }
+
+      .connection-title {
+        font-size: 14px;
+      }
+
+      .status-grid-modern {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .quick-stats {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 12px;
+        gap: 10px;
+      }
+
+      .not-connected-card {
+        grid-template-columns: 1fr;
+        gap: 24px;
+        padding: 20px;
+      }
+
+      .not-connected-content {
+        grid-column: 1;
+      }
+
+      .not-connected-logo {
+        grid-column: 1;
+      }
+
+      .logo-image {
+        width: 150px;
+        height: 150px;
+      }
+
+      .not-connected-title {
+        font-size: 18px;
+      }
+
+      .not-connected-description {
+        font-size: 12px;
+      }
+
+      .not-connected-features {
+        gap: 8px;
+      }
+
+      .feature-item {
+        padding: 8px;
+        gap: 8px;
+      }
+
+      .feature-text {
+        font-size: 11px;
+      }
+
+      .btn-connect-gmail {
+        padding: 10px 16px;
+        font-size: 12px;
+      }
+
+      .config-form {
+        gap: 16px;
+      }
+
+      .form-section {
+        gap: 6px;
+      }
+
+      .form-label {
+        font-size: 12px;
+      }
+
+      .form-description {
+        font-size: 11px;
+      }
+
+      .form-input,
+      .form-textarea {
+        padding: 10px;
+        font-size: 12px;
+      }
+
+      .form-textarea {
+        min-height: 100px;
+      }
+
+      .modal {
+        width: min(90vw, 400px);
+        max-height: 90vh;
+      }
+
+      .modal-header {
+        padding: 16px;
+      }
+
+      .modal-header h3 {
+        font-size: 16px;
+      }
+
+      .modal-content {
+        padding: 16px;
+      }
+
+      .example-section h4 {
+        font-size: 13px;
+      }
+
+      .code-block {
+        padding: 10px;
+        font-size: 11px;
+      }
+
+      .status-badge-large {
+        font-size: 12px;
+      }
+
+      .card-title {
+        font-size: 12px;
+      }
+
+      .btn {
+        padding: 10px 14px;
+        font-size: 13px;
+      }
+
+      .help-button {
+        width: 22px;
+        height: 22px;
+        font-size: 11px;
+      }
      }
 
-     .status-grid {
-       grid-template-columns: 1fr;
-     }
+     /* Extra small devices */
+     @media (max-width: 480px) {
+      .email-bot-page {
+        padding-top: 12px;
+      }
 
-     .tab-content {
-       min-height: auto;
-     }
+      .tab-header {
+        padding: 6px;
+        gap: 3px;
+      }
 
-     .primary-connection-card {
-       flex-direction: column;
-       text-align: center;
-       gap: 16px;
-     }
+      .tab-button {
+        height: 36px;
+        padding: 6px 8px;
+        font-size: 11px;
+      }
 
-     .connection-info {
-       align-items: center;
-     }
+      .tab-content {
+        padding: 8px;
+        max-height: calc(100vh - 160px);
+      }
 
-     .status-grid-modern {
-       grid-template-columns: 1fr;
-     }
+      .mailbox-header {
+        gap: 6px;
+      }
 
-     .quick-stats {
-       grid-template-columns: repeat(2, 1fr);
+      .mailbox-selector {
+        padding: 6px;
+        gap: 4px;
+      }
+
+      .mailbox-tab {
+        padding: 6px 8px;
+        font-size: 10px;
+      }
+
+      .refresh-btn {
+        width: 32px;
+        height: 32px;
+      }
+
+      .email-item {
+        padding: 8px;
+        min-height: 48px;
+      }
+
+      .email-from {
+        font-size: 10px;
+      }
+
+      .email-subject {
+        font-size: 11px;
+      }
+
+      .email-snippet {
+        font-size: 9px;
+      }
+
+      .email-date {
+        font-size: 8px;
+      }
+
+      .pagination-controls {
+        padding: 8px 6px;
+        gap: 6px;
+      }
+
+      .pagination-btn {
+        padding: 5px 8px;
+        font-size: 10px;
+        min-width: 60px;
+      }
+
+      .not-connected-card {
+        padding: 16px;
+        gap: 16px;
+      }
+
+      .logo-image {
+        width: 120px;
+        height: 120px;
+      }
+
+      .not-connected-title {
+        font-size: 16px;
+      }
+
+      .not-connected-description {
+        font-size: 11px;
+      }
+
+      .form-label {
+        font-size: 11px;
+      }
+
+      .form-input,
+      .form-textarea {
+        padding: 8px;
+        font-size: 11px;
+      }
+
+      .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
+      .status-badge-large {
+        font-size: 11px;
+      }
      }
-   }
 </style>
 

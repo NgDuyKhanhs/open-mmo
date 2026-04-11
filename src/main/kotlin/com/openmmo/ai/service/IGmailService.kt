@@ -3,7 +3,6 @@ package com.openmmo.ai.service
 import com.openmmo.ai.dto.ConnectGmailResponse
 import com.openmmo.ai.dto.GmailStatusResponse
 import com.openmmo.ai.dto.GmailBotConfigRequest
-import com.openmmo.ai.dto.MailboxItemResponse
 
 /**
  * Gmail OAuth Service Interface
@@ -19,7 +18,6 @@ interface IGmailOAuthService {
  * Gmail API Service Interface
  */
 interface IGmailApiService {
-    fun getMailbox(userId: String, boxType: String, maxResults: Int = 20): List<MailboxItemResponse>
     fun searchMessages(userId: String, query: String, maxResults: Int = 10): List<String>
     fun getMessageBody(userId: String, messageId: String): String
     fun getMessageHeaders(userId: String, messageId: String): Map<String, String>

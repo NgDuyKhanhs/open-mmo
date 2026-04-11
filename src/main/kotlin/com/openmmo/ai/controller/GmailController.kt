@@ -121,17 +121,23 @@ class GmailController(
         return ResponseEntity.ok(botService.updatePrompt(userId, customPrompt))
     }
 
-    @GetMapping("/mailbox")
-    fun getMailbox(
+    @GetMapping("/mailbox-page")
+    fun getMailboxPage(
         @RequestParam box: String,
-        @RequestParam(defaultValue = "20") max: Int,
+        @RequestParam(defaultValue = "5") pageSize: Int,
+        @RequestParam(required = false) pageToken: String?,
         authentication: Authentication
-    ): ResponseEntity<List<MailboxItemResponse>> {
+    ): ResponseEntity<com.openmmo.ai.dto.MailboxPageResponse> {
         val userId = authentication.name
-        logger.info("Fetching Gmail mailbox: userId=$userId, box=$box, max=$max")
-        val items = apiService.getMailbox(userId, box, max)
-        logger.info("Successfully fetched ${items.size} emails from mailbox")
-        return ResponseEntity.ok(items)
+        logger.info("Fetching Gmail mailbox page: userId=$userId, box=$box, pageSize=$pageSize, pageToken=$pageToken")
+
+        // Cast service to impl to access getMailboxPage method
+        if (apiService !is com.openmmo.ai.service.impl.GmailApiServiceImpl) {
+            throw IllegalStateException("Service not available")
+        }
+        val page = apiService.getMailboxPage(userId, box, pageSize, pageToken)
+        logger.info("Successfully fetched ${page.emails.size} emails from page")
+        return ResponseEntity.ok(page)
     }
 
     @PostMapping("/ai-reply")

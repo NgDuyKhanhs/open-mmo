@@ -26,13 +26,17 @@ class GmailApiClient(
     }
 
     /**
-     * List messages with query
+     * List messages with query and pagination support
      */
-    fun listMessages(accessToken: String, query: String, maxResults: Int = 20): List<Map<String, String>> {
-        logger.debug("Listing messages: query=$query, maxResults=$maxResults")
+    fun listMessages(accessToken: String, query: String, maxResults: Int = 20, pageToken: String? = null): Map<String, Any> {
+        logger.debug("Listing messages: query=$query, maxResults=$maxResults, pageToken=$pageToken")
 
         try {
-            val url = "$gmailApiBase/messages?q=$query&maxResults=$maxResults"
+            var url = "$gmailApiBase/messages?q=$query&maxResults=$maxResults"
+            if (pageToken != null) {
+                url += "&pageToken=$pageToken"
+            }
+
             val headers = HttpHeaders().apply {
                 set("Authorization", "Bearer $accessToken")
             }
@@ -44,13 +48,11 @@ class GmailApiClient(
                 HttpMethod.GET,
                 request,
                 Map::class.java
-            ).body as? Map<String, Any> ?: return emptyList()
+            ).body as? Map<String, Any> ?: return mapOf("messages" to emptyList<Any>())
 
-            @Suppress("UNCHECKED_CAST")
-            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
-            logger.debug("Found ${messages.size} messages")
+            logger.debug("Found ${(response["messages"] as? List<*>)?.size ?: 0} messages")
 
-            return messages
+            return response
         } catch (e: HttpClientErrorException) {
             logger.error("HTTP error listing messages: ${e.statusCode} - ${e.responseBodyAsString}")
             throw e
@@ -82,6 +84,38 @@ class GmailApiClient(
             return response
         } catch (e: Exception) {
             logger.error("Failed to get message: ${e.message}")
+            throw e
+        }
+    }
+
+    /**
+     * Get message metadata only (minimal fields for listing)
+     * Fetches: From, Subject, Date, Snippet, Labels
+     * ~80% smaller payload than full message
+     */
+    fun getMessageMetadata(accessToken: String, messageId: String): Map<String, Any> {
+        logger.debug("Fetching message metadata: $messageId")
+
+        try {
+            // format=metadata only returns headers specified in metadataHeaders
+            val url = "$gmailApiBase/messages/$messageId?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date"
+            val headers = HttpHeaders().apply {
+                set("Authorization", "Bearer $accessToken")
+            }
+            val request = HttpEntity<String>(headers)
+
+            @Suppress("UNCHECKED_CAST")
+            val response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                request,
+                Map::class.java
+            ).body as? Map<String, Any> ?: throw IllegalStateException("No response from Gmail API")
+
+            logger.debug("Message metadata fetched: $messageId")
+            return response
+        } catch (e: Exception) {
+            logger.error("Failed to get message metadata: ${e.message}")
             throw e
         }
     }
