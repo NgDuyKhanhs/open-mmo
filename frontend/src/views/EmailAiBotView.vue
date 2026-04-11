@@ -4,7 +4,7 @@
   import { computed, onMounted, ref } from 'vue'
   import { toast } from 'vue3-toastify'
   import navbarLogoUrl from '@/assets/navbar-logo.png'
-  import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon } from 'lucide-vue-next'
+  import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon, Send, AlertOctagon } from 'lucide-vue-next'
   import {
     getGmailStatus,
     startGmailConnection,
@@ -465,16 +465,38 @@
                  <div class="mailbox-header">
                   <div class="mailbox-selector">
                     <button
-                      v-for="box in ['inbox', 'sent', 'spam']"
-                      :key="box"
-                      @click="selectBox(box as typeof selectedBox)"
-                      :class="['mailbox-tab', { active: selectedBox === box }]"
-                      :title="`View ${box} emails`"
+                      @click="selectBox('inbox')"
+                      :class="['mailbox-tab-btn', { active: selectedBox === 'inbox' }]"
+                      :title="'View inbox emails'"
                       :disabled="isLoading"
-                     >
-                       <span class="mailbox-label">{{ box.charAt(0).toUpperCase() + box.slice(1) }}</span>
-                     </button>
-                   </div>
+                    >
+                      <Inbox :size="18" class="mailbox-icon" />
+                      <span class="mailbox-btn-label">Inbox</span>
+                      <div class="mailbox-indicator" v-if="selectedBox === 'inbox'"></div>
+                    </button>
+
+                    <button
+                      @click="selectBox('sent')"
+                      :class="['mailbox-tab-btn', { active: selectedBox === 'sent' }]"
+                      :title="'View sent emails'"
+                      :disabled="isLoading"
+                    >
+                      <Send :size="18" class="mailbox-icon" />
+                      <span class="mailbox-btn-label">Sent</span>
+                      <div class="mailbox-indicator" v-if="selectedBox === 'sent'"></div>
+                    </button>
+
+                    <button
+                      @click="selectBox('spam')"
+                      :class="['mailbox-tab-btn', { active: selectedBox === 'spam' }]"
+                      :title="'View spam emails'"
+                      :disabled="isLoading"
+                    >
+                      <AlertOctagon :size="18" class="mailbox-icon" />
+                      <span class="mailbox-btn-label">Spam</span>
+                      <div class="mailbox-indicator" v-if="selectedBox === 'spam'"></div>
+                    </button>
+                  </div>
                  </div>
 
                <div class="email-list">
@@ -1344,6 +1366,115 @@ Best regards</div>
      to { transform: rotate(360deg); }
    }
 
+   /* Mailbox Tab Buttons - New Design */
+   .mailbox-tab-btn {
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     gap: 10px;
+     padding: 11px 18px;
+     border: 1px solid rgba(0, 240, 255, 0.12);
+     background: rgba(0, 240, 255, 0.04);
+     color: rgba(232, 247, 255, 0.65);
+     cursor: pointer;
+     font-size: 13px;
+     font-weight: 600;
+     border-radius: 11px;
+     transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+     position: relative;
+     flex: 1;
+     white-space: nowrap;
+     overflow: hidden;
+     letter-spacing: 0.3px;
+   }
+
+   .mailbox-tab-btn:disabled {
+     opacity: 0.4;
+     cursor: not-allowed;
+     pointer-events: none;
+   }
+
+   .mailbox-tab-btn:hover:not(:disabled) {
+     border-color: rgba(0, 240, 255, 0.25);
+     background: rgba(0, 240, 255, 0.08);
+     color: #e8f7ff;
+     transform: translateY(-2px);
+     box-shadow: 0 4px 12px rgba(0, 240, 255, 0.1);
+   }
+
+   .mailbox-tab-btn.active {
+     border-color: rgba(0, 240, 255, 0.4);
+     background: linear-gradient(135deg, rgba(0, 240, 255, 0.12), rgba(0, 240, 255, 0.06));
+     color: #00f0ff;
+     box-shadow:
+       0 4px 16px rgba(0, 240, 255, 0.15),
+       inset 0 1px 0 rgba(0, 240, 255, 0.15);
+     animation: mailboxActivePulse 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+   }
+
+   @keyframes mailboxActivePulse {
+     0% {
+       transform: scale(0.98);
+       opacity: 0.9;
+     }
+     50% {
+       transform: scale(1.02);
+     }
+     100% {
+       transform: scale(1);
+       opacity: 1;
+     }
+   }
+
+   .mailbox-icon {
+     font-size: 18px;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+     flex-shrink: 0;
+   }
+
+   .mailbox-tab-btn:hover:not(:disabled) .mailbox-icon {
+     transform: scale(1.15) rotate(-8deg);
+   }
+
+   .mailbox-tab-btn.active .mailbox-icon {
+     transform: scale(1.2) rotate(0deg);
+   }
+
+   .mailbox-btn-label {
+     font-size: 13px;
+     font-weight: 600;
+     letter-spacing: 0.3px;
+     display: inline-block;
+   }
+
+   .mailbox-indicator {
+     position: absolute;
+     bottom: -1px;
+     left: 0;
+     right: 0;
+     height: 3px;
+     background: linear-gradient(90deg, #00f0ff, #00d4ff);
+     border-radius: 3px 3px 0 0;
+     animation: mailboxIndicatorSlide 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+     box-shadow: 0 -2px 8px rgba(0, 240, 255, 0.3);
+   }
+
+   @keyframes mailboxIndicatorSlide {
+     from {
+       height: 0;
+       opacity: 0;
+       transform: scaleX(0.3);
+     }
+     to {
+       height: 3px;
+       opacity: 1;
+       transform: scaleX(1);
+     }
+   }
+
    .mailbox-tab {
      display: inline-flex;
      align-items: center;
@@ -1369,62 +1500,62 @@ Best regards</div>
      pointer-events: none;
    }
 
-  .mailbox-tab::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), transparent);
-    opacity: 0;
-    border-radius: 10px;
-    transition: opacity 0.25s ease;
-    pointer-events: none;
-  }
+   .mailbox-tab::before {
+     content: '';
+     position: absolute;
+     inset: 0;
+     background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), transparent);
+     opacity: 0;
+     border-radius: 10px;
+     transition: opacity 0.25s ease;
+     pointer-events: none;
+   }
 
-  .mailbox-tab:hover {
-    border-color: rgba(0, 240, 255, 0.3);
-    background: rgba(0, 240, 255, 0.09);
-    color: #00f0ff;
-  }
+   .mailbox-tab:hover {
+     border-color: rgba(0, 240, 255, 0.3);
+     background: rgba(0, 240, 255, 0.09);
+     color: #00f0ff;
+   }
 
-  .mailbox-tab:hover::before {
-    opacity: 1;
-  }
+   .mailbox-tab:hover::before {
+     opacity: 1;
+   }
 
-  .mailbox-tab.active {
-    border-color: rgba(0, 240, 255, 0.5);
-    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(0, 240, 255, 0.08));
-    color: #00f0ff;
-    box-shadow:
-      0 4px 12px rgba(0, 240, 255, 0.12),
-      inset 0 1px 0 rgba(0, 240, 255, 0.2);
-  }
+   .mailbox-tab.active {
+     border-color: rgba(0, 240, 255, 0.5);
+     background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(0, 240, 255, 0.08));
+     color: #00f0ff;
+     box-shadow:
+       0 4px 12px rgba(0, 240, 255, 0.12),
+       inset 0 1px 0 rgba(0, 240, 255, 0.2);
+   }
 
-  .mailbox-tab.active::before {
-    opacity: 0;
-  }
+   .mailbox-tab.active::before {
+     opacity: 0;
+   }
 
-  .mailbox-icon {
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  }
+   .mailbox-icon {
+     font-size: 16px;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+   }
 
-  .mailbox-tab:hover .mailbox-icon {
-    transform: scale(1.1) rotate(-5deg);
-  }
+   .mailbox-tab:hover .mailbox-icon {
+     transform: scale(1.1) rotate(-5deg);
+   }
 
-  .mailbox-tab.active .mailbox-icon {
-    transform: scale(1.15);
-  }
+   .mailbox-tab.active .mailbox-icon {
+     transform: scale(1.15);
+   }
 
-  .mailbox-label {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
-    transition: all 0.25s ease;
-  }
+   .mailbox-label {
+     font-size: 12px;
+     font-weight: 600;
+     letter-spacing: 0.2px;
+     transition: all 0.25s ease;
+   }
 
   .email-list {
     display: flex;
@@ -2325,13 +2456,79 @@ Best regards</div>
       background: rgba(0, 200, 100, 0.15);
     }
 
-    .stat-value.inactive {
-      color: #ffb400;
-      background: rgba(255, 180, 0, 0.15);
-    }
+     .stat-value.inactive {
+       color: #ffb400;
+       background: rgba(255, 180, 0, 0.15);
+     }
 
-     /* Responsive */
-     @media (max-width: 768px) {
+   /* Mailbox Tab Responsive Styles */
+   @media (max-width: 1024px) {
+     .mailbox-tab-btn {
+       padding: 10px 14px;
+       gap: 8px;
+       font-size: 12px;
+     }
+
+     .mailbox-icon {
+       font-size: 16px;
+     }
+   }
+
+   @media (max-width: 768px) {
+     .mailbox-header {
+       margin-bottom: 16px;
+     }
+
+     .mailbox-selector {
+       gap: 6px;
+       padding: 10px;
+     }
+
+     .mailbox-tab-btn {
+       padding: 10px 12px;
+       gap: 6px;
+       font-size: 11px;
+       border-radius: 9px;
+     }
+
+     .mailbox-icon {
+       font-size: 16px;
+     }
+
+     .mailbox-btn-label {
+       font-size: 11px;
+     }
+   }
+
+   @media (max-width: 480px) {
+     .mailbox-selector {
+       gap: 4px;
+       padding: 8px;
+     }
+
+     .mailbox-tab-btn {
+       padding: 8px 10px;
+       gap: 4px;
+       font-size: 10px;
+       border-radius: 8px;
+     }
+
+     .mailbox-icon {
+       font-size: 14px;
+     }
+
+     .mailbox-btn-label {
+       font-size: 10px;
+       display: none;
+     }
+
+     .mailbox-indicator {
+       height: 2px;
+     }
+   }
+
+      /* Responsive */
+      @media (max-width: 768px) {
       .email-bot-page {
         padding-top: 20px;
       }
