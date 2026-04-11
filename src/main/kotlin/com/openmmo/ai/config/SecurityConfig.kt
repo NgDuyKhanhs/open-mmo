@@ -175,11 +175,11 @@ class SecurityConfig(
             .map { it.trim() }
             .filter { it.isNotEmpty() && it != "*" } // Filter out empty or wildcard
 
-        logger.info("🔐 CORS origins configured: $origins")
+        logger.info("CORS origins configured: $origins")
 
         // Use pattern if needed for development
         if (origins.isEmpty()) {
-            logger.warn("⚠️  No CORS origins configured, defaulting to localhost")
+            logger.warn("No CORS origins configured, defaulting to localhost")
             configuration.allowedOrigins = listOf(
                 "http://localhost:5173",
                 "http://localhost:8080",

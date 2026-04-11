@@ -29,7 +29,7 @@ class GmailBotScheduler(
     @Scheduled(fixedDelay = 60000, initialDelay = 30000)
     fun autoReplyEmailsScheduled() {
         try {
-            logger.info("🤖 Starting scheduled auto-reply job...")
+            logger.info("Starting scheduled auto-reply job...")
 
             val result = autoReplyService.autoReplyEmails()
 
@@ -38,9 +38,9 @@ class GmailBotScheduler(
             val totalReplied = result["totalReplied"]
             val totalErrors = result["totalErrors"]
 
-            logger.info("✅ Auto-reply job completed: processed=$totalProcessed, replied=$totalReplied, errors=$totalErrors")
+            logger.info("Auto-reply job completed: processed=$totalProcessed, replied=$totalReplied, errors=$totalErrors")
         } catch (e: Exception) {
-            logger.error("❌ Error in scheduled auto-reply job: ${e.message}", e)
+            logger.error("Error in scheduled auto-reply job: ${e.message}", e)
         }
     }
 

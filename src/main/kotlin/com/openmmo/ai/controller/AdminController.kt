@@ -38,7 +38,7 @@ class AdminController(
                 "gmail_bot_configs" to botConfigRepository.count()
             )
 
-            logger.info("✅ All Gmail data cleared. Remaining: $remaining")
+            logger.info("All Gmail data cleared. Remaining: $remaining")
             return ResponseEntity.ok(mapOf(
                 "status" to "success",
                 "message" to "All Gmail connections and configs deleted",

@@ -81,7 +81,7 @@ class GmailBotServiceImpl(
         val config = botConfigRepository.findByUserId(userId)
             ?: GmailBotConfig(userId = userId)
 
-        botConfigRepository.save(config.copy(triggerSubject = triggerSubject.trim()))
+        botConfigRepository.save(config.copy(triggerSubject = triggerSubject.trim().lowercase()))
         logger.debug("Gmail bot config updated for user: $userId with triggerSubject: $triggerSubject")
 
         return mapOf(

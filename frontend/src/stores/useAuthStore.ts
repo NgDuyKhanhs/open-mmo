@@ -55,7 +55,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     // 🔐 RefreshToken is auto-managed by browser via HttpOnly cookie
-    console.log('✅ Auth initialized from localStorage. RefreshToken is in HttpOnly cookie.')
   }
 
   // Getters
@@ -109,10 +108,9 @@ export const useAuthStore = defineStore('auth', () => {
       const response = await login(payload)
       const success = handleAuthResponse(response)
 
-      if (success) {
-        console.log('Login successful:', user.value?.email)
-      }
-      return success
+       if (success) {
+       }
+       return success
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed'
       error.value = message
@@ -131,10 +129,9 @@ export const useAuthStore = defineStore('auth', () => {
       const response = await googleLogin(payload)
       const success = handleAuthResponse(response)
 
-      if (success) {
-        console.log('Google login successful:', user.value?.email)
-      }
-      return success
+       if (success) {
+       }
+       return success
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Google login failed'
       error.value = message
@@ -159,34 +156,31 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearAuth()
       isLoading.value = false
-      console.log('Logout successful')
     }
   }
 
-  const refreshTokenManual = async () => {
-    try {
-      console.log('🔄 Attempting token refresh...')
-      // 🔐 RefreshToken is in HttpOnly cookie - just send empty body
-      // Backend will automatically read from cookie
-      const response = await refreshTokenAPI('')
+   const refreshTokenManual = async () => {
+     try {
+       // 🔐 RefreshToken is in HttpOnly cookie - just send empty body
+       // Backend will automatically read from cookie
+       const response = await refreshTokenAPI('')
 
-      if (response.success && response.accessToken) {
-        accessToken.value = response.accessToken
-        // 🔐 New RefreshToken is in HttpOnly cookie (not in response)
-        saveToStorage()
-        console.log('✅ Token refreshed successfully')
-        return true
-      } else {
-        console.error('❌ Token refresh failed:', response.message)
-        clearAuth()
-        return false
-      }
-    } catch (err) {
-      console.error('❌ Token refresh error:', err)
-      clearAuth()
-      return false
-    }
-  }
+       if (response.success && response.accessToken) {
+         accessToken.value = response.accessToken
+         // 🔐 New RefreshToken is in HttpOnly cookie (not in response)
+         saveToStorage()
+         return true
+       } else {
+         console.error('❌ Token refresh failed:', response.message)
+         clearAuth()
+         return false
+       }
+     } catch (err) {
+       console.error('❌ Token refresh error:', err)
+       clearAuth()
+       return false
+     }
+   }
 
    const clearError = () => {
      error.value = null
@@ -209,17 +203,11 @@ export const useAuthStore = defineStore('auth', () => {
        }
 
        const decoded = JSON.parse(atob(payload))
-       const expirationTime = decoded.exp * 1000 // Convert to milliseconds
-       const currentTime = Date.now()
-       const timeUntilExpiration = expirationTime - currentTime
+        const expirationTime = decoded.exp * 1000 // Convert to milliseconds
+        const currentTime = Date.now()
+        const timeUntilExpiration = expirationTime - currentTime
 
-       console.log('🔐 Token expiration check:', {
-         expiresIn: Math.floor(timeUntilExpiration / 1000) + 's',
-         threshold: Math.floor(thresholdMs / 1000) + 's',
-         willRefresh: timeUntilExpiration < thresholdMs,
-       })
-
-       return timeUntilExpiration < thresholdMs
+        return timeUntilExpiration < thresholdMs
      } catch (e) {
        console.error('Failed to decode token:', e)
        return true // Assume expired if decode fails

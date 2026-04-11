@@ -75,21 +75,18 @@ async function ensureTokenFresh(token: string): Promise<string> {
     const { useAuthStore } = await import('@/stores/useAuthStore')
     const authStore = useAuthStore()
 
-    // Check if token is expiring within 5 minutes
-    if (authStore.isTokenExpiringSoon(token, 5 * 60 * 1000)) {
-      console.log('⚠️  Token expiring soon, attempting refresh...')
-
-      // Refresh token is in HttpOnly cookie (auto-managed by browser)
-      // Just call refreshTokenManual, it will use cookie automatically
-      const refreshed = await authStore.refreshTokenManual()
-      if (refreshed && authStore.accessToken) {
-        console.log('✅ Token refreshed successfully')
-        return authStore.accessToken
-      } else {
-        console.error('❌ Token refresh failed')
-        throw new Error('Token refresh failed')
-      }
-    }
+     // Check if token is expiring within 5 minutes
+     if (authStore.isTokenExpiringSoon(token, 5 * 60 * 1000)) {
+       // Refresh token is in HttpOnly cookie (auto-managed by browser)
+       // Just call refreshTokenManual, it will use cookie automatically
+       const refreshed = await authStore.refreshTokenManual()
+       if (refreshed && authStore.accessToken) {
+         return authStore.accessToken
+       } else {
+         console.error('❌ Token refresh failed')
+         throw new Error('Token refresh failed')
+       }
+     }
 
     return token
   } catch (error) {

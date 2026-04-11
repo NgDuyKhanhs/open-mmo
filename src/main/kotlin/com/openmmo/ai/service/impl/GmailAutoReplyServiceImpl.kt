@@ -104,7 +104,7 @@ class GmailAutoReplyServiceImpl(
             logger.debug("Bot trigger subject: $triggerSubject for user: $userId")
 
             // 3. Get unreplied emails matching trigger subject
-            val query = "subject:$triggerSubject -label:$AI_BOT_REPLY_LABEL is:unread"
+            val query = "subject:${triggerSubject.lowercase()} -label:$AI_BOT_REPLY_LABEL is:unread"
             val messageIds = gmailApiService.searchMessages(userId, query, maxResults = 10)
             logger.info("Found ${messageIds.size} unreplied emails matching trigger for user: $userId")
 
@@ -130,69 +130,77 @@ class GmailAutoReplyServiceImpl(
                     val threadId = meta["threadId"] as? String ?: messageId
 
                     if (emailFrom.isNotEmpty() && emailSubject.isNotEmpty()) {
-                        // Load memory for this correspondent
-                        val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
-                        val memoryContext = correspondentMemoryService.buildMemoryContextText(memory)
+                        // Get full headers for skip checks
+                        val headers = gmailApiService.getMessageHeaders(userId, messageId)
 
-                        // Generate AI reply with memory context
-                        logger.debug("Generating AI reply with memory for: $messageId")
-                        val aiReply = gmailApiService.generateAiReplyWithMemory(userId, messageId, memoryContext)
-                        logger.debug("AI reply generated with memory, length: ${aiReply.length}")
-
-                        // Validate email before sending
-                        if (!emailFrom.contains("@")) {
-                            logger.warn("⚠️ Invalid recipient email format: $emailFrom, skipping reply")
+                        // Check skip rules
+                        if (shouldSkipEmail(emailFrom, emailSubject, emailContent, headers, userId)) {
+                            logger.info("Skipping email $messageId for user $userId due to skip rules")
                         } else {
-                            // Send reply
-                            logger.debug("Sending reply to: $emailFrom (subject: $emailSubject)")
-                            try {
-                                gmailApiService.sendReply(
+                            // Load memory for this correspondent
+                            val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
+                            val memoryContext = correspondentMemoryService.buildMemoryContextText(memory)
+
+                            // Generate AI reply with memory context
+                            logger.debug("Generating AI reply with memory for: $messageId")
+                            val aiReply = gmailApiService.generateAiReplyWithMemory(userId, messageId, memoryContext)
+                            logger.debug("AI reply generated with memory, length: ${aiReply.length}")
+
+                            // Validate email before sending
+                            if (!emailFrom.contains("@")) {
+                                logger.warn("⚠️ Invalid recipient email format: $emailFrom, skipping reply")
+                            } else {
+                                // Send reply
+                                logger.debug("Sending reply to: $emailFrom (subject: $emailSubject)")
+                                try {
+                                    gmailApiService.sendReply(
+                                        userId = userId,
+                                        threadId = threadId,
+                                        toEmail = emailFrom,
+                                        subject = emailSubject,
+                                        bodyText = aiReply
+                                    )
+                                    logger.debug("Reply sent successfully")
+                                } catch (e: Exception) {
+                                    logger.error("Failed to send reply: ${e.message}", e)
+                                    throw e
+                                }
+
+                                // Ensure AI_BOT_REPLY label exists
+                                logger.debug("Ensuring AI_BOT_REPLY label exists")
+                                val labelId = gmailApiService.ensureLabel(userId, AI_BOT_REPLY_LABEL)
+                                logger.debug("Label ID: $labelId")
+
+                                // Add AI_BOT_REPLY label and remove UNREAD
+                                logger.debug("Modifying labels for: $messageId")
+                                gmailApiService.modifyLabels(
                                     userId = userId,
-                                    threadId = threadId,
-                                    toEmail = emailFrom,
-                                    subject = emailSubject,
-                                    bodyText = aiReply
-                                )
-                                logger.debug("Reply sent successfully")
-                            } catch (e: Exception) {
-                                logger.error("Failed to send reply: ${e.message}", e)
-                                throw e
-                            }
-
-                            // Ensure AI_BOT_REPLY label exists
-                            logger.debug("Ensuring AI_BOT_REPLY label exists")
-                            val labelId = gmailApiService.ensureLabel(userId, AI_BOT_REPLY_LABEL)
-                            logger.debug("Label ID: $labelId")
-
-                            // Add AI_BOT_REPLY label and remove UNREAD
-                            logger.debug("Modifying labels for: $messageId")
-                            gmailApiService.modifyLabels(
-                                userId = userId,
-                                messageId = messageId,
-                                addLabels = listOf(labelId),
-                                removeLabels = listOf("UNREAD")
-                            )
-                            logger.debug("Labels modified successfully")
-
-                            // Update memory with new correspondence
-                            logger.debug("Updating memory after reply for: $messageId")
-                            try {
-                                correspondentMemoryService.updateAfterReply(
-                                    userId = userId,
-                                    correspondentEmail = emailFrom,
-                                    threadId = threadId,
                                     messageId = messageId,
-                                    emailSubject = emailSubject,
-                                    emailBody = emailContent,
-                                    replyBody = aiReply
+                                    addLabels = listOf(labelId),
+                                    removeLabels = listOf("UNREAD")
                                 )
-                                logger.debug("Memory updated successfully")
-                            } catch (e: Exception) {
-                                logger.warn("Failed to update memory (non-fatal): ${e.message}")
-                            }
+                                logger.debug("Labels modified successfully")
 
-                            logger.info("✅ Successfully replied to email $messageId for user: $userId")
-                            repliedCount++
+                                // Update memory with new correspondence
+                                logger.debug("Updating memory after reply for: $messageId")
+                                try {
+                                    correspondentMemoryService.updateAfterReply(
+                                        userId = userId,
+                                        correspondentEmail = emailFrom,
+                                        threadId = threadId,
+                                        messageId = messageId,
+                                        emailSubject = emailSubject,
+                                        emailBody = emailContent,
+                                        replyBody = aiReply
+                                    )
+                                    logger.debug("Memory updated successfully")
+                                } catch (e: Exception) {
+                                    logger.warn("Failed to update memory (non-fatal): ${e.message}")
+                                }
+
+                                logger.info("Successfully replied to email $messageId for user: $userId")
+                                repliedCount++
+                            }
                         }
                     } else {
                         logger.warn("⚠️ Could not extract email details from message: $messageId (from=$emailFrom, subject=$emailSubject)")
@@ -318,5 +326,83 @@ class GmailAutoReplyServiceImpl(
         logger.debug("Could not extract subject from content")
         return ""
     }
-}
 
+    /**
+     * Check if email should be skipped based on multiple rules
+     */
+    private fun shouldSkipEmail(
+        emailFrom: String,
+        emailSubject: String,
+        emailBody: String,
+        headers: Map<String, String>,
+        userId: String
+    ): Boolean {
+        val headersLower = headers.mapKeys { it.key.lowercase() }
+        val contentLower = (emailSubject + " " + emailBody).lowercase()
+
+        // Rule 1: Auto-generated/auto-replied emails
+        if (headersLower.containsKey("auto-submitted") ||
+            headersLower["auto-submitted"]?.contains("auto-generated") == true ||
+            headersLower["auto-submitted"]?.contains("auto-replied") == true ||
+            headersLower.containsKey("x-auto-response-suppress") ||
+            headersLower["precedence"]?.let { it.contains("bulk") || it.contains("junk") || it.contains("list") } == true) {
+            logger.info("Skip rule 1: Auto-generated email")
+            return true
+        }
+
+        // Rule 2: Mailing lists/newsletters
+        if (headersLower.containsKey("list-id") || headersLower.containsKey("list-unsubscribe")) {
+            logger.info("Skip rule 2: Mailing list/newsletter")
+            return true
+        }
+
+        // Rule 3: Bounce/delivery failures
+        if (emailFrom.lowercase().contains("mailer-daemon") ||
+            emailFrom.lowercase().contains("postmaster") ||
+            contentLower.contains("undelivered") ||
+            contentLower.contains("mail delivery subsystem")) {
+            logger.info("Skip rule 3: Bounce/delivery failure")
+            return true
+        }
+
+        // Rule 4: No-reply addresses
+        if (emailFrom.lowercase().contains("no-reply") ||
+            emailFrom.lowercase().contains("noreply") ||
+            emailFrom.lowercase().contains("do-not-reply") ||
+            emailFrom.lowercase().contains("donotreply")) {
+            logger.info("Skip rule 4: No-reply address")
+            return true
+        }
+
+        // Rule 5: Promotions/social/receipts/OTP/notifications
+        val categories = headersLower["x-gm-raw"]?.lowercase() ?: ""
+        if (categories.contains("promotions") ||
+            categories.contains("social") ||
+            contentLower.contains("otp") ||
+            contentLower.contains("verification code") ||
+            contentLower.contains("confirm code") ||
+            contentLower.contains("receipt") ||
+            contentLower.contains("invoice") ||
+            contentLower.contains("notification") ||
+            contentLower.contains("alert")) {
+            logger.info("Skip rule 5: Promotions/social/OTP/notifications")
+            return true
+        }
+
+        // Rule 6: Calendar invites
+        if (emailBody.contains("BEGIN:VCALENDAR") ||
+            headersLower["content-type"]?.contains("text/calendar") == true) {
+            logger.info("Skip rule 6: Calendar invite")
+            return true
+        }
+
+        // Rule 7: Email from self
+        val userEmail = headersLower["to"]?.lowercase() ?: ""
+        if (emailFrom.lowercase() == userEmail.lowercase()) {
+            logger.info("Skip rule 7: Email from self")
+            return true
+        }
+
+        return false
+    }
+}

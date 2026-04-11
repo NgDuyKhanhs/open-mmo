@@ -4,6 +4,7 @@
   import { computed, onMounted, ref } from 'vue'
   import { toast } from 'vue3-toastify'
   import navbarLogoUrl from '@/assets/navbar-logo.png'
+  import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon } from 'lucide-vue-next'
   import {
     getGmailStatus,
     startGmailConnection,
@@ -33,7 +34,6 @@
     const error = router.currentRoute.value.query.error
 
     if (connected === '1') {
-      console.log('✅ Gmail OAuth successful!')
       toast.success('Gmail connected successfully!')
       // Clear query params
       router.replace('/email-ai-bot')
@@ -58,15 +58,16 @@
   })
 
   const emails = ref<Email[]>([])
+  const emailsCache = ref<Map<string, Email[]>>(new Map())
   const selectedBox = ref<'inbox' | 'sent' | 'spam' | 'trash'>('inbox')
   const selectedEmail = ref<Email | null>(null)
   const isLoading = ref(false)
   const isSaving = ref(false)
   const showModal = ref(false)
-  const configSubject = ref('')
-  const configPrompt = ref('')
-  const showPromptHelp = ref(false)
-  const activeTab = ref<'mailbox' | 'config'>('mailbox')
+   const configSubject = ref('')
+   const configPrompt = ref('')
+   const showPromptHelp = ref(false)
+   const activeTab = ref<'mailbox' | 'config' | 'status'>('mailbox')
 
   // Load custom prompt when switching to config tab
   const switchToConfigTab = async () => {
@@ -114,9 +115,8 @@
         return
       }
 
-      status.value = await getGmailStatus(authStore.accessToken)
-      configSubject.value = status.value.triggerSubject
-      console.log('✅ Gmail status loaded:', status.value)
+       status.value = await getGmailStatus(authStore.accessToken)
+       configSubject.value = status.value.triggerSubject
     } catch (err) {
       console.error('Failed to load status:', err)
       toast.error(err instanceof Error ? err.message : 'Failed to load status')
@@ -125,6 +125,13 @@
 
   // Load emails from selected mailbox
   const loadEmails = async () => {
+    // Check cache first
+     const cacheKey = selectedBox.value
+     if (emailsCache.value.has(cacheKey)) {
+       emails.value = emailsCache.value.get(cacheKey) || []
+       return
+     }
+
     isLoading.value = true
     try {
       if (!authStore.accessToken) {
@@ -138,6 +145,8 @@
         selectedBox.value.toLowerCase(),
         20
       )
+      // Cache the emails
+      emailsCache.value.set(cacheKey, emails.value)
     } catch (err) {
       console.error('Failed to load emails:', err)
       if (err instanceof Error && err.message.includes('401')) {
@@ -149,6 +158,8 @@
               selectedBox.value.toLowerCase(),
               20
             )
+            // Cache the emails
+            emailsCache.value.set(cacheKey, emails.value)
           } catch (retryErr) {
             toast.error(retryErr instanceof Error ? retryErr.message : 'Error loading emails')
           }
@@ -224,12 +235,30 @@
     }
   }
 
-  // Select mailbox and load emails
-  const selectBox = async (box: typeof selectedBox.value) => {
-    selectedBox.value = box
-    selectedEmail.value = null
-    await loadEmails()
-  }
+   // Select mailbox and load emails
+   const selectBox = async (box: typeof selectedBox.value) => {
+     // Prevent switching if emails are loading
+     if (isLoading.value) {
+       toast.warning('⏳ Please wait for emails to finish loading')
+       return
+     }
+     selectedBox.value = box
+     selectedEmail.value = null
+     await loadEmails()
+   }
+
+   // Refresh emails - clear cache and reload current mailbox
+   const refreshEmails = async () => {
+     if (isLoading.value) {
+       toast.warning('⏳ Already loading emails')
+       return
+     }
+     // Clear cache for current mailbox
+     emailsCache.value.delete(selectedBox.value)
+     toast.info('Refreshing emails...')
+     await loadEmails()
+     toast.success('Emails refreshed!')
+   }
 
   // Select email and show preview
   const selectEmail = (email: Email) => {
@@ -343,53 +372,69 @@
 
         <!-- Main Content Area -->
         <main v-if="status.connected" class="main-content">
-          <!-- Tab Navigation -->
-          <div class="tab-header">
-            <button
-              @click="activeTab = 'mailbox'"
-              :class="['tab-button', { active: activeTab === 'mailbox' }]"
-            >
-              <span class="tab-icon">📧</span>
-              <span>Emails</span>
-            </button>
-            <button
-              @click="switchToConfigTab"
-              :class="['tab-button', { active: activeTab === 'config' }]"
-            >
-              <span class="tab-icon">⚙️</span>
-              <span>Settings</span>
-            </button>
-          </div>
+              <!-- Tab Navigation -->
+              <div class="tab-header">
+                 <button
+                   @click="activeTab = 'mailbox'"
+                   :class="['tab-button', { active: activeTab === 'mailbox' }]"
+                 >
+                   <Mail :size="18" class="tab-icon" />
+                 </button>
+                  <button
+                    @click="switchToConfigTab"
+                    :class="['tab-button', { active: activeTab === 'config' }]"
+                  >
+                    <Settings :size="18" class="tab-icon" />
 
-          <!-- Tab Content -->
-          <div class="tab-content">
-            <!-- Mailbox Tab -->
-            <div v-show="activeTab === 'mailbox'" class="mailbox-section">
-              <div class="mailbox-selector">
-                <button
-                  v-for="box in ['inbox', 'sent', 'spam']"
-                  :key="box"
-                  @click="selectBox(box as typeof selectedBox)"
-                  :class="['mailbox-tab', { active: selectedBox === box }]"
-                  :title="`View ${box} emails`"
-                >
-                  <span class="mailbox-label">{{ box.charAt(0).toUpperCase() + box.slice(1) }}</span>
-                </button>
+                  </button>
+                  <button
+                    @click="activeTab = 'status'"
+                    :class="['tab-button', { active: activeTab === 'status' }]"
+                  >
+                    <LinkIcon :size="18" class="tab-icon" />
+                  </button>
               </div>
 
+           <!-- Tab Content -->
+           <div class="tab-content">
+             <!-- Mailbox Tab -->
+              <div v-show="activeTab === 'mailbox'" class="mailbox-section tab-pane">
+                 <div class="mailbox-header">
+                  <div class="mailbox-selector">
+                    <button
+                      v-for="box in ['inbox', 'sent', 'spam']"
+                      :key="box"
+                      @click="selectBox(box as typeof selectedBox)"
+                      :class="['mailbox-tab', { active: selectedBox === box }]"
+                      :title="`View ${box} emails`"
+                      :disabled="isLoading"
+                    >
+                      <span class="mailbox-label">{{ box.charAt(0).toUpperCase() + box.slice(1) }}</span>
+                    </button>
+                  </div>
+                  <button
+                    @click="refreshEmails"
+                    class="refresh-btn"
+                    :disabled="isLoading"
+                    title="Refresh current mailbox"
+                  >
+                    <RefreshCw :size="18" class="refresh-icon" />
+                  </button>
+                </div>
+
               <div class="email-list">
-                <div v-if="isLoading" class="loading-state">
-                  <div class="spinner"></div>
-                  <span>Loading emails...</span>
-                </div>
-                <div v-else-if="emails.length === 0" class="empty-state">
-                  <span class="empty-icon">📭</span>
-                  <span>No emails in {{ selectedBox }}</span>
-                </div>
-                <div v-else-if="filteredEmails.length === 0" class="empty-state">
-                  <span class="empty-icon">🔍</span>
-                  <span>No emails matching "{{ status.triggerSubject }}"</span>
-                </div>
+                   <div v-if="isLoading" class="loading-state">
+                   <div class="spinner"></div>
+                   <span>Loading emails...</span>
+                 </div>
+                  <div v-else-if="emails.length === 0" class="empty-state">
+                    <Inbox :size="32" class="empty-icon" />
+                    <span>No emails in {{ selectedBox }}</span>
+                  </div>
+                  <div v-else-if="filteredEmails.length === 0" class="empty-state">
+                    <Search :size="32" class="empty-icon" />
+                    <span>No emails matching "{{ status.triggerSubject }}"</span>
+                  </div>
                 <div v-else class="email-items">
                   <div
                     v-for="email in filteredEmails"
@@ -397,7 +442,10 @@
                     @click="selectEmail(email)"
                     class="email-item"
                   >
-                    <div class="email-from">{{ extractEmail(email.from) }}</div>
+                    <div class="email-from">
+                      <Mail size="14" />
+                      {{ extractEmail(email.from) }}
+                    </div>
                     <div class="email-subject">{{ email.subject }}</div>
                     <div class="email-snippet">{{ email.snippet }}</div>
                     <div class="email-date">{{ formatDate(email.date) }}</div>
@@ -406,44 +454,9 @@
               </div>
             </div>
 
-            <!-- Settings Tab -->
-            <div v-show="activeTab === 'config'" class="settings-section">
-              <!-- Bot Status Overview -->
-              <div class="status-overview">
-                <div class="status-grid">
-                  <div class="status-info-card">
-                    <span class="status-label">Connection Status</span>
-                    <div :class="['status-badge-large', status.connected ? 'connected' : 'disconnected']">
-                      {{ status.connected ? '🟢 Connected' : '🔴 Disconnected' }}
-                    </div>
-                  </div>
-
-                  <div v-if="status.connected" class="status-info-card">
-                    <span class="status-label">Bot Status</span>
-                    <div class="bot-toggle-container">
-                      <label class="toggle-switch-large">
-                        <input
-                          type="checkbox"
-                          :checked="status.botEnabled"
-                          @change="toggleBot"
-                          :disabled="isSaving"
-                        />
-                        <span class="toggle-slider-large"></span>
-                      </label>
-                      <span :class="['status-text', status.botEnabled ? 'running' : 'paused']">
-                        {{ status.botEnabled ? 'Running' : 'Paused' }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div v-if="status.lastError" class="status-info-card error-info">
-                    <span class="status-label">Last Error</span>
-                    <div class="error-text">{{ status.lastError }}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="section-divider"></div>
+             <!-- Settings Tab -->
+             <div v-show="activeTab === 'config'" class="settings-section tab-pane">
+               <!-- Bot Status Overview -->
 
               <div class="config-form">
                 <!-- Trigger Subject -->
@@ -467,7 +480,7 @@
                   <div class="label-row">
                     <label class="form-label">Custom AI Prompt</label>
                     <button @click="showPromptHelp = true" class="help-button" title="View examples">
-                      ?
+                      <HelpCircle size="16" />
                     </button>
                   </div>
                   <p class="form-description">
@@ -489,20 +502,116 @@
                   >
                     {{ isSaving ? 'Saving...' : 'Save Configuration' }}
                   </button>
+                 </div>
+               </div>
+             </div>
+
+              <!-- Connection Status Tab -->
+              <div v-show="activeTab === 'status'" class="status-section tab-pane">
+                <div class="status-content">
+                  <div class="status-header">
+                    <h3 class="status-section-title">Connection</h3>
+                    <p class="status-subtitle">Manage your Gmail account and bot settings</p>
+                  </div>
+
+                  <!-- Primary Connection Card -->
+                  <div v-if="!status.connected" class="primary-connection-card disconnected-card">
+                    <div class="connection-icon disconnected-icon">
+                      <AlertCircle :size="48" />
+                    </div>
+                    <div class="connection-info">
+                      <h4 class="connection-title">Gmail Account Not Connected</h4>
+                      <p class="connection-description">Connect your Gmail account to enable AI-powered auto-replies</p>
+                      <button @click="connectGmail" class="btn btn-primary btn-large" :disabled="isLoading">
+                        <LinkIcon v-if="!isLoading" :size="16" />
+                        <span v-if="!isLoading">Connect Gmail Account</span>
+                        <span v-else>Connecting...</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-else class="primary-connection-card connected-card">
+                    <div class="connection-icon connected-icon">
+                      <CheckCircle2 :size="48" />
+                    </div>
+                    <div class="connection-info">
+                      <h4 class="connection-title">Connected</h4>
+                      <p class="connection-email">{{ status.gmailAddress }}</p>
+                    </div>
+                  </div>
+
+                  <!-- Status Grid -->
+                  <div class="status-grid-modern">
+                    <!-- Bot Status -->
+                    <div v-if="status.connected" class="modern-card bot-card">
+                      <div class="card-header">
+                        <Bot :size="18" class="card-icon" />
+                        <span class="card-title">Bot Status</span>
+                      </div>
+                      <div class="card-content">
+                        <div class="bot-toggle-large">
+                          <label class="toggle-switch-large">
+                            <input
+                              type="checkbox"
+                              :checked="status.botEnabled"
+                              @change="toggleBot"
+                              :disabled="isSaving"
+                            />
+                            <span class="toggle-slider-large"></span>
+                          </label>
+                          <div class="toggle-info">
+                            <span :class="['status-badge-small', status.botEnabled ? 'active' : 'inactive']">
+                              {{ status.botEnabled ? '● Running' : '● Paused' }}
+                            </span>
+                            <span class="toggle-description">
+                              {{ status.botEnabled ? 'Auto-replies are enabled' : 'Auto-replies are paused' }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+
+
+                    <!-- Last Run Info -->
+                    <div v-if="status.lastRunAt" class="modern-card run-card">
+                      <div class="card-header">
+                        <Clock :size="18" class="card-icon" />
+                        <span class="card-title">Last Run</span>
+                      </div>
+                      <div class="card-content">
+                        <p class="run-time">{{ formatDate(status.lastRunAt) }}</p>
+                        <p class="run-hint">Last time the bot processed emails</p>
+                      </div>
+                    </div>
+
+                    <!-- Error Info -->
+                    <div v-if="status.lastError" class="modern-card error-card">
+                      <div class="card-header error-header">
+                        <AlertTriangle :size="18" class="card-icon" />
+                        <span class="card-title">Last Error</span>
+                      </div>
+                      <div class="card-content">
+                        <p class="error-message">{{ status.lastError }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Quick Stats -->
+
                 </div>
               </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    </div>
+           </div>
+         </main>
+       </div>
+     </div>
 
     <!-- Email Preview Modal -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal" @click.stop>
         <div class="modal-header">
           <h3>Email Preview</h3>
-          <button @click="closeModal" class="close-btn">×</button>
+          <span @click="closeModal" class="close-btn">x</span>
         </div>
         <div class="modal-content" v-if="selectedEmail">
           <div class="email-preview">
@@ -532,7 +641,7 @@
       <div class="modal" @click.stop>
         <div class="modal-header">
           <h3>Prompt Examples</h3>
-          <button @click="showPromptHelp = false" class="close-btn">×</button>
+          <span @click="showPromptHelp = false" class="close-btn">x</span>
         </div>
         <div class="modal-content">
           <div class="help-content">
@@ -547,24 +656,6 @@ Regarding your question: {body}
 I'd be happy to help! Feel free to reach out if you need more information.
 
 Best regards</div>
-            </div>
-
-            <div class="placeholder-section">
-              <h4>📍 Available Placeholders</h4>
-              <div class="placeholder-list">
-                <div class="placeholder-item">
-                  <code>{subject}</code>
-                  <span>Email subject line</span>
-                </div>
-                <div class="placeholder-item">
-                  <code>{senderEmail}</code>
-                  <span>Sender's email address</span>
-                </div>
-                <div class="placeholder-item">
-                  <code>{body}</code>
-                  <span>Email message content</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -689,7 +780,10 @@ Best regards</div>
     align-items: center;
     justify-content: center;
   }
-
+ .close-btn {
+  cursor: pointer;
+  font-size: 18px;
+  }
   .logo-image {
     width: 300px;
     height: 300px;
@@ -1018,46 +1112,51 @@ Best regards</div>
     position: relative;
   }
 
-  .tab-header {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    border-bottom: none;
-    border-right: 1px solid rgba(0, 240, 255, 0.1);
-    background: transparent;
-    padding: 16px;
-    align-items: stretch;
-    width: 160px;
-    height: auto;
-    flex-shrink: 0;
-  }
+   .tab-header {
+     display: flex;
+     flex-direction: column;
+     gap: 8px;
+     border-bottom: none;
+     border-right: 1px solid rgba(0, 240, 255, 0.1);
+     background: transparent;
+     padding: 16px;
+     align-items: stretch;
+     height: auto;
+     flex-shrink: 0;
+   }
 
-  .tab-button {
-    flex: 0 1 auto;
-    padding: 12px 14px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 10px;
-    border: none;
-    background: rgba(0, 240, 255, 0.08);
-    color: rgba(232, 247, 255, 0.6);
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    border-radius: 10px;
-    border: 1px solid rgba(0, 240, 255, 0.15);
-    position: relative;
-    overflow: hidden;
-    white-space: nowrap;
-  }
+    .tab-button {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      border: none;
+      background: transparent;
+      color: rgba(232, 247, 255, 0.6);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      position: relative;
+      overflow: hidden;
+      white-space: nowrap;
+      width: auto;
+      min-width: auto;
+      height: 44px;
+      flex: 0 1 auto;
+    }
+
+   .tab-button:disabled {
+     opacity: 0.5;
+     cursor: not-allowed;
+     pointer-events: none;
+   }
 
   .tab-button::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), transparent);
     opacity: 0;
     transition: opacity 0.3s ease;
     pointer-events: none;
@@ -1065,8 +1164,6 @@ Best regards</div>
 
   .tab-button:hover {
     color: #e8f7ff;
-    background: rgba(0, 240, 255, 0.12);
-    border-color: rgba(0, 240, 255, 0.3);
   }
 
   .tab-button:hover::before {
@@ -1075,9 +1172,6 @@ Best regards</div>
 
   .tab-button.active {
     color: #00f0ff;
-    border-color: rgba(0, 240, 255, 0.5);
-    background: rgba(0, 240, 255, 0.15);
-    box-shadow: 0 0 20px rgba(0, 240, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 
   .tab-button.active::before {
@@ -1088,43 +1182,118 @@ Best regards</div>
     font-size: 18px;
   }
 
-  .tab-content {
-    padding: 20px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 600px;
-    overflow: hidden;
-  }
+   .tab-content {
+     padding: 20px;
+     flex: 1;
+     display: flex;
+     flex-direction: column;
+     min-height: 600px;
+     overflow: hidden;
+   }
 
-  /* Mailbox Section */
-  .mailbox-selector {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 24px;
-    padding: 12px;
-    border-radius: 12px;
-  }
+    /* ...existing code... */
 
-  .mailbox-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    border: 1px solid rgba(0, 240, 255, 0.15);
-    background: rgba(0, 240, 255, 0.05);
-    color: rgba(232, 247, 255, 0.65);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    position: relative;
-    flex: 1;
-    white-space: nowrap;
-  }
+    /* Tab Pane Animation */
+    .tab-pane {
+      animation: fadeInTab 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    @keyframes fadeInTab {
+      from {
+        opacity: 0;
+        transform: translateX(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+   /* Mailbox Section */
+   .mailbox-header {
+     display: flex;
+     align-items: center;
+     gap: 12px;
+     margin-bottom: 24px;
+   }
+
+   .mailbox-selector {
+     display: flex;
+     align-items: center;
+     gap: 8px;
+     flex: 1;
+     padding: 12px;
+     border-radius: 12px;
+   }
+
+   .refresh-btn {
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     width: 40px;
+     height: 40px;
+     padding: 0;
+     border: 1px solid rgba(0, 240, 255, 0.15);
+     background: rgba(0, 240, 255, 0.05);
+     border-radius: 10px;
+     cursor: pointer;
+     transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+     color: rgba(232, 247, 255, 0.65);
+   }
+
+   .refresh-btn:hover:not(:disabled) {
+     border-color: rgba(0, 240, 255, 0.3);
+     background: rgba(0, 240, 255, 0.09);
+     color: #00f0ff;
+   }
+
+   .refresh-btn:active:not(:disabled) {
+     transform: scale(0.95);
+   }
+
+   .refresh-btn:disabled {
+     opacity: 0.5;
+     cursor: not-allowed;
+   }
+
+   .refresh-icon {
+     font-size: 18px;
+     display: inline-block;
+     transition: transform 0.6s linear;
+   }
+
+   .refresh-btn:not(:disabled):active .refresh-icon {
+     animation: spin 0.6s linear;
+   }
+
+   @keyframes spin {
+     to { transform: rotate(360deg); }
+   }
+
+   .mailbox-tab {
+     display: inline-flex;
+     align-items: center;
+     justify-content: center;
+     gap: 6px;
+     padding: 10px 14px;
+     border-radius: 10px;
+     border: 1px solid rgba(0, 240, 255, 0.15);
+     background: rgba(0, 240, 255, 0.05);
+     color: rgba(232, 247, 255, 0.65);
+     cursor: pointer;
+     font-size: 12px;
+     font-weight: 600;
+     transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+     position: relative;
+     flex: 1;
+     white-space: nowrap;
+   }
+
+   .mailbox-tab:disabled {
+     opacity: 0.5;
+     cursor: not-allowed;
+     pointer-events: none;
+   }
 
   .mailbox-tab::before {
     content: '';
@@ -1273,22 +1442,17 @@ Best regards</div>
     box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15);
   }
 
-  .email-from {
-    font-size: 13px;
-    font-weight: 600;
-    color: #00f0ff;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
+   .email-from {
+     font-size: 13px;
+     font-weight: 600;
+     color: #00f0ff;
+     margin: 0;
+     display: flex;
+     align-items: center;
+     gap: 8px;
+   }
 
-  .email-from::before {
-    content: '📧';
-    font-size: 12px;
-  }
-
-  .email-subject {
+   .email-subject {
     font-size: 14px;
     font-weight: 700;
     color: #e8f7ff;
@@ -1635,24 +1799,424 @@ Best regards</div>
     white-space: nowrap;
   }
 
-  .placeholder-item span {
-    font-size: 12px;
-    color: rgba(232, 247, 255, 0.7);
-  }
+   .placeholder-item span {
+     font-size: 12px;
+     color: rgba(232, 247, 255, 0.7);
+   }
 
-  /* Responsive */
-  @media (max-width: 768px) {
-    .mailbox-selector {
-      grid-template-columns: repeat(2, 1fr);
+   /* Status Section */
+   .status-section {
+     min-height: 400px;
+   }
+
+   .status-content {
+     display: flex;
+     flex-direction: column;
+     gap: 24px;
+   }
+
+   .status-section-title {
+     margin: 0;
+     font-size: 18px;
+     font-weight: 600;
+     color: #e8f7ff;
+     letter-spacing: 0.5px;
+   }
+
+   .status-overview-full {
+     margin-bottom: 12px;
+     padding-bottom: 12px;
+   }
+
+   .status-detail {
+     margin: 8px 0 0;
+     padding: 8px 0;
+     font-size: 12px;
+     color: rgba(232, 247, 255, 0.6);
+     display: flex;
+     flex-direction: column;
+     gap: 4px;
+   }
+
+   .detail-label {
+     font-size: 11px;
+     text-transform: uppercase;
+     letter-spacing: 0.6px;
+     color: rgba(232, 247, 255, 0.4);
+     font-weight: 600;
+   }
+
+   .detail-value {
+     font-family: 'Courier New', monospace;
+     color: #00f0ff;
+     word-break: break-all;
+   }
+
+   .trigger-keyword {
+     padding: 10px 12px;
+     border-radius: 8px;
+     background: rgba(0, 240, 255, 0.08);
+     border: 1px solid rgba(0, 240, 255, 0.2);
+     font-size: 12px;
+     color: #00f0ff;
+     font-weight: 500;
+   }
+
+   .last-run {
+     padding: 10px 12px;
+     border-radius: 8px;
+     background: rgba(0, 240, 255, 0.08);
+     border: 1px solid rgba(0, 240, 255, 0.2);
+     font-size: 12px;
+     color: rgba(232, 247, 255, 0.7);
+   }
+
+    .action-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
 
-    .status-grid {
-      grid-template-columns: 1fr;
+    /* Redesigned Status Tab Styles */
+    .status-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
     }
 
-    .tab-content {
-      min-height: auto;
+    .status-subtitle {
+      margin: 0;
+      font-size: 13px;
+      color: rgba(232, 247, 255, 0.6);
+      font-weight: 400;
     }
-  }
+
+    /* Primary Connection Card */
+    .primary-connection-card {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 24px;
+      border-radius: 14px;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      backdrop-filter: blur(10px);
+      margin-bottom: 24px;
+      transition: all 0.3s ease;
+    }
+
+    .primary-connection-card.connected-card {
+      background: linear-gradient(135deg, rgba(0, 200, 100, 0.08), rgba(0, 240, 255, 0.08));
+      border-color: rgba(0, 200, 100, 0.3);
+    }
+
+    .primary-connection-card.disconnected-card {
+      background: linear-gradient(135deg, rgba(255, 100, 100, 0.08), rgba(255, 150, 100, 0.08));
+      border-color: rgba(255, 100, 100, 0.3);
+    }
+
+    .connection-icon {
+      font-size: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+
+      width: 60px;
+      height: 60px;
+    }
+
+    .connection-icon connected-icon {
+      color: #00c864;
+    }
+
+    .connection-icon.disconnected-icon {
+      color: #ff6464;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    .connection-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .connection-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: #e8f7ff;
+    }
+
+    .connection-email {
+      margin: 0;
+      font-size: 13px;
+      font-family: 'Courier New', monospace;
+      color: #00f0ff;
+      font-weight: 500;
+    }
+
+    .connection-description {
+      margin: 0;
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.6);
+    }
+
+    .btn-large {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      width: auto;
+    }
+
+    /* Modern Card Grid */
+    .status-grid-modern {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .modern-card {
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      background: rgba(0, 240, 255, 0.05);
+      backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .modern-card:hover {
+      border-color: rgba(0, 240, 255, 0.3);
+      background: rgba(0, 240, 255, 0.08);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 16px rgba(0, 240, 255, 0.1);
+    }
+
+    .modern-card.bot-card {
+      grid-column: span 1;
+    }
+
+    .modern-card.keyword-card {
+      grid-column: span 1;
+    }
+
+    .modern-card.run-card {
+      grid-column: span 1;
+    }
+
+    .modern-card.error-card {
+      background: rgba(255, 100, 100, 0.08);
+      border-color: rgba(255, 100, 100, 0.2);
+    }
+
+    .modern-card.error-card:hover {
+      background: rgba(255, 100, 100, 0.12);
+      border-color: rgba(255, 100, 100, 0.3);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .card-header.error-header {
+      color: #ff6464;
+    }
+
+    .card-icon {
+      font-size: 18px;
+      color: #00f0ff;
+      flex-shrink: 0;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e8f7ff;
+      text-transform: capitalize;
+    }
+
+    .card-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Bot Toggle in Card */
+    .bot-toggle-large {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .toggle-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .status-badge-small {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(232, 247, 255, 0.8);
+    }
+
+    .status-badge-small.active {
+      color: #00c864;
+    }
+
+    .status-badge-small.inactive {
+      color: #ffb400;
+    }
+
+    .toggle-description {
+      font-size: 11px;
+      color: rgba(232, 247, 255, 0.5);
+    }
+
+    /* Keyword Display */
+    .keyword-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgba(0, 240, 255, 0.1);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      min-height: 32px;
+    }
+
+    .keyword-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: #00f0ff;
+      font-family: 'Courier New', monospace;
+    }
+
+    .keyword-default {
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.5);
+      font-style: italic;
+    }
+
+    .keyword-hint {
+      margin: 0;
+      font-size: 11px;
+      color: rgba(232, 247, 255, 0.5);
+    }
+
+    /* Run Time Display */
+    .run-time {
+      margin: 0;
+      font-size: 12px;
+      color: #00f0ff;
+      font-weight: 500;
+    }
+
+    .run-hint {
+      margin: 0;
+      font-size: 11px;
+      color: rgba(232, 247, 255, 0.5);
+    }
+
+    /* Error Message */
+    .error-message {
+      margin: 0;
+      font-size: 12px;
+      color: #ff6464;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    /* Quick Stats Section */
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      background: rgba(0, 240, 255, 0.03);
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: rgba(232, 247, 255, 0.5);
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(232, 247, 255, 0.8);
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 240, 255, 0.1);
+    }
+
+    .stat-value.active {
+      color: #00c864;
+      background: rgba(0, 200, 100, 0.15);
+    }
+
+    .stat-value.inactive {
+      color: #ffb400;
+      background: rgba(255, 180, 0, 0.15);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+     .mailbox-selector {
+       grid-template-columns: repeat(2, 1fr);
+     }
+
+     .status-grid {
+       grid-template-columns: 1fr;
+     }
+
+     .tab-content {
+       min-height: auto;
+     }
+
+     .primary-connection-card {
+       flex-direction: column;
+       text-align: center;
+       gap: 16px;
+     }
+
+     .connection-info {
+       align-items: center;
+     }
+
+     .status-grid-modern {
+       grid-template-columns: 1fr;
+     }
+
+     .quick-stats {
+       grid-template-columns: repeat(2, 1fr);
+     }
+   }
 </style>
 
