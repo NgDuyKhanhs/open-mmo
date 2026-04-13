@@ -58,6 +58,7 @@ class GmailApiServiceImpl(
     }    /**
      * Get mailbox with pagination support (5 emails per page)
      * Fetches 2x pageSize to ensure we return requested amount despite potential failures
+     * FIXED: Now retries with fresh token on 401 Unauthorized error
      */
     fun getMailboxPage(userId: String, boxType: String, pageSize: Int = 5, pageToken: String? = null): MailboxPageResponse {
         try {
@@ -67,7 +68,7 @@ class GmailApiServiceImpl(
             val connection = connectionRepository.findByUserId(userId)
                 ?: throw IllegalStateException("Gmail not connected")
 
-            val accessToken = getAccessToken(connection)
+            var accessToken = getAccessToken(connection)
 
             val query = when (boxType) {
                 "inbox" -> "in:inbox"
@@ -79,66 +80,124 @@ class GmailApiServiceImpl(
 
             // Fetch 2x pageSize to handle any failures and ensure we get requested amount
             val fetchSize = pageSize * 2
-            @Suppress("UNCHECKED_CAST")
-            val response = gmailApiClient.listMessages(accessToken, query, fetchSize, pageToken)
-            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
-            val nextPageToken = response["nextPageToken"] as? String
-            logger.info("Found ${messages.size} messages in initial fetch")
 
-            // Fetch all message details in parallel
-            val futures = messages.mapNotNull { msg ->
-                val msgId = msg["id"] ?: return@mapNotNull null
-                val threadId = msg["threadId"] ?: return@mapNotNull null
+            try {
+                @Suppress("UNCHECKED_CAST")
+                val response = gmailApiClient.listMessages(accessToken, query, fetchSize, pageToken)
+                val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+                val nextPageToken = response["nextPageToken"] as? String
+                logger.info("Found ${messages.size} messages in initial fetch")
 
-                CompletableFuture.supplyAsync({
-                    try {
-                        val full = getMessageDetailsMetadata(accessToken, msgId, threadId)
-                        MailboxItemResponse(
-                            id = full.id,
-                            threadId = threadId,
-                            from = full.from,
-                            subject = full.subject,
-                            date = full.date,
-                            snippet = full.snippet,
-                            labels = full.labels
-                        )
-                    } catch (e: Exception) {
-                        logger.warn("Failed to get details for message $msgId: ${e.message}")
-                        null
-                    }
-                }, ForkJoinPool.commonPool())
+                return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime)
+            } catch (e: org.springframework.web.client.HttpClientErrorException) {
+                // If 401 Unauthorized, refresh token and retry
+                if (e.statusCode.value() == 401) {
+                    logger.warn("Access token expired (401), refreshing and retrying for user: $userId")
+                    val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
+                    // Force refresh by clearing cache and getting new token
+                    cache.remove(userId)
+                    accessToken = getAccessToken(connection)
+
+                    // Retry the request with fresh token
+                    @Suppress("UNCHECKED_CAST")
+                    val response = gmailApiClient.listMessages(accessToken, query, fetchSize, pageToken)
+                    val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+                    val nextPageToken = response["nextPageToken"] as? String
+                    logger.info("Found ${messages.size} messages in retry fetch")
+
+                    return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime)
+                } else {
+                    throw e
+                }
             }
-
-            val emails = CompletableFuture.allOf(*futures.toTypedArray()).thenApply {
-                futures.mapNotNull { it.join() }
-            }.get()
-
-            // Take only the requested page size
-            val paginatedEmails = emails.take(pageSize)
-
-            val duration = System.currentTimeMillis() - startTime
-            logger.info("✅ Mailbox page loaded in ${duration}ms (${paginatedEmails.size} emails, nextPageToken=$nextPageToken)")
-
-            return MailboxPageResponse(
-                emails = paginatedEmails,
-                nextPageToken = nextPageToken,
-                totalCount = paginatedEmails.size
-            )
         } catch (e: Exception) {
             logger.error("Error getting mailbox page: ${e.message}")
             throw e
         }
     }
 
+    /**
+     * Extract and process mailbox messages (helper method)
+     */
+    private fun processMailboxMessages(
+        userId: String,
+        messages: List<Map<String, String>>,
+        nextPageToken: String?,
+        pageSize: Int,
+        startTime: Long
+    ): MailboxPageResponse {
+        // Get access token for fetching message details
+        val connection = connectionRepository.findByUserId(userId)
+            ?: throw IllegalStateException("Gmail not connected")
+        val accessToken = getAccessToken(connection)
+
+        // Fetch all message details in parallel
+        val futures = messages.mapNotNull { msg ->
+            val msgId = msg["id"] ?: return@mapNotNull null
+            val threadId = msg["threadId"] ?: return@mapNotNull null
+
+            CompletableFuture.supplyAsync({
+                try {
+                    val full = getMessageDetailsMetadata(accessToken, msgId, threadId)
+                    MailboxItemResponse(
+                        id = full.id,
+                        threadId = threadId,
+                        from = full.from,
+                        subject = full.subject,
+                        date = full.date,
+                        snippet = full.snippet,
+                        labels = full.labels
+                    )
+                } catch (e: Exception) {
+                    logger.warn("Failed to get details for message $msgId: ${e.message}")
+                    null
+                }
+            }, ForkJoinPool.commonPool())
+        }
+
+        val emails = CompletableFuture.allOf(*futures.toTypedArray()).thenApply {
+            futures.mapNotNull { it.join() }
+        }.get()
+
+        // Take only the requested page size
+        val paginatedEmails = emails.take(pageSize)
+
+        val duration = System.currentTimeMillis() - startTime
+        logger.info("✅ Mailbox page loaded in ${duration}ms (${paginatedEmails.size} emails, nextPageToken=$nextPageToken)")
+
+        return MailboxPageResponse(
+            emails = paginatedEmails,
+            nextPageToken = nextPageToken,
+            totalCount = paginatedEmails.size
+        )
+    }
+
     override fun searchMessages(userId: String, query: String, maxResults: Int): List<String> {
         val connection = connectionRepository.findByUserId(userId)
             ?: throw IllegalStateException("Gmail not connected")
 
-        val accessToken = getAccessToken(connection)
-        @Suppress("UNCHECKED_CAST")
-        val response = gmailApiClient.listMessages(accessToken, query, maxResults)
-        val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
-        return messages.mapNotNull { it["id"] }
+        var accessToken = getAccessToken(connection)
+
+        try {
+            @Suppress("UNCHECKED_CAST")
+            val response = gmailApiClient.listMessages(accessToken, query, maxResults)
+            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+            return messages.mapNotNull { it["id"] }
+        } catch (e: org.springframework.web.client.HttpClientErrorException) {
+            if (e.statusCode.value() == 401) {
+                logger.warn("Access token expired (401), refreshing and retrying for user: $userId")
+                val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
+                cache.remove(userId)
+                accessToken = getAccessToken(connection)
+
+                @Suppress("UNCHECKED_CAST")
+                val response = gmailApiClient.listMessages(accessToken, query, maxResults)
+                val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+                return messages.mapNotNull { it["id"] }
+            } else {
+                throw e
+            }
+        }
     }
 
     override fun getMessageBody(userId: String, messageId: String): String {
@@ -179,7 +238,7 @@ class GmailApiServiceImpl(
             logger.error("Cannot send reply: toEmail is blank")
             throw IllegalArgumentException("Recipient email address is required")
         }
-        if (toEmail.toLowerCase().contains("unknown") || !toEmail.contains("@")) {
+        if (toEmail.lowercase().contains("unknown") || !toEmail.contains("@")) {
             logger.error("Cannot send reply: invalid email address: $toEmail")
             throw IllegalArgumentException("Invalid recipient email address: $toEmail")
         }
@@ -356,6 +415,15 @@ $encodedBody
         }
 
         // Token not cached, fetch and refresh
+        return refreshAndCacheToken(connection, cache)
+    }
+
+    /**
+     * Refreshes the access token and caches it
+     * This method can be called multiple times to force a refresh (e.g., after 401 error)
+     */
+    private fun refreshAndCacheToken(connection: com.openmmo.ai.entity.GmailConnection, cache: MutableMap<String, String>): String {
+        val userId = connection.userId
         try {
             logger.debug("Decrypting refresh token for user: $userId")
             val decryptedRefreshToken = EncryptionUtil.decrypt(connection.refreshTokenEnc, tokenEncKey)
@@ -488,5 +556,41 @@ $encodedBody
             append("═══ YOUR REPLY (no greeting/signature) ═══\n")
         }
     }
-}
 
+    /**
+     * Helper method to execute Gmail API calls with automatic retry on 401 Unauthorized
+     * Handles token refresh and retry transparently
+     */
+    private fun <T> withTokenRefreshRetry(
+        userId: String,
+        block: (accessToken: String) -> T
+    ): T {
+        val connection = connectionRepository.findByUserId(userId)
+            ?: throw IllegalStateException("Gmail not connected")
+
+        var accessToken = getAccessToken(connection)
+
+        try {
+            return block(accessToken)
+        } catch (e: org.springframework.web.client.HttpClientErrorException) {
+            if (e.statusCode.value() == 401) {
+                logger.warn("Access token expired (401), refreshing and retrying for user: $userId")
+                val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
+                cache.remove(userId)
+                accessToken = getAccessToken(connection)
+
+                // Retry once with fresh token
+                try {
+                    return block(accessToken)
+                } catch (retryE: org.springframework.web.client.HttpClientErrorException) {
+                    if (retryE.statusCode.value() == 401) {
+                        logger.error("Still getting 401 after token refresh. May indicate revoked/invalid credentials for user: $userId")
+                    }
+                    throw retryE
+                }
+            } else {
+                throw e
+            }
+        }
+    }
+}
