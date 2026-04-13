@@ -141,10 +141,17 @@ class GmailAutoReplyServiceImpl(
                             val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
                             val memoryContext = correspondentMemoryService.buildMemoryContextText(memory)
 
-                            // Generate AI reply with memory context
+                            // Generate AI reply with memory context + fallback on failure
                             logger.debug("Generating AI reply with memory for: $messageId")
-                            val aiReply = gmailApiService.generateAiReplyWithMemory(userId, messageId, memoryContext)
-                            logger.debug("AI reply generated with memory, length: ${aiReply.length}")
+                            var aiReply: String
+                            try {
+                                aiReply = gmailApiService.generateAiReplyWithMemory(userId, messageId, memoryContext)
+                                logger.debug("AI reply generated with memory, length: ${aiReply.length}")
+                            } catch (e: Exception) {
+                                logger.warn("⚠️ Failed to generate AI reply (${e.message}), using fallback response")
+                                aiReply = generateFallbackReply(emailFrom, emailSubject)
+                                logger.debug("Fallback reply used, length: ${aiReply.length}")
+                            }
 
                             // Validate email before sending
                             if (!emailFrom.contains("@")) {
@@ -404,5 +411,18 @@ class GmailAutoReplyServiceImpl(
         }
 
         return false
+    }
+
+    /**
+     * Generate fallback reply when AI generation fails
+     * Returns a polite, generic response that works for any email
+     * Used as failsafe when Gemini API is unavailable or returns error
+     */
+    private fun generateFallbackReply(senderEmail: String, senderSubject: String): String {
+        return """Thank you for reaching out. I have received your message and will get back to you as soon as possible. 
+
+If this is urgent, please feel free to contact me directly.
+
+Best regards"""
     }
 }
