@@ -13,6 +13,7 @@ data class GmailBotConfig(
     val triggerSubject: String = "openmmo",
     val processedLabel: String = "OpenMMO_AutoReplied",
     val customPrompt: String = "",
+    val aiProvider: String = "groq", // "groq" or "gemini" (default: groq for speed/cost)
     val lastRunAt: LocalDateTime? = null,
     val lastError: String? = null,
     val createdAt: LocalDateTime = LocalDateTime.now(),

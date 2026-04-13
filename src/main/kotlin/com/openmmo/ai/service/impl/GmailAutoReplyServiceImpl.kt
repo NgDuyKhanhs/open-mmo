@@ -4,14 +4,17 @@ import com.openmmo.ai.service.IGmailAutoReplyService
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailBotService
 import com.openmmo.ai.service.ICorrespondentMemoryService
+import com.openmmo.ai.service.IGeminiAiService
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.repository.GmailConnectionRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.beans.factory.annotation.Qualifier
 
 /**
  * Gmail Auto-Reply Service Implementation
  * Automatically generates and sends replies to emails matching trigger conditions
+ * Uses user's selected AI provider (Groq for speed/cost, Gemini for quality)
  */
 @Service
 class GmailAutoReplyServiceImpl(
@@ -19,7 +22,11 @@ class GmailAutoReplyServiceImpl(
     private val gmailBotService: IGmailBotService,
     private val botConfigRepository: GmailBotConfigRepository,
     private val connectionRepository: GmailConnectionRepository,
-    private val correspondentMemoryService: ICorrespondentMemoryService
+    private val correspondentMemoryService: ICorrespondentMemoryService,
+    @Qualifier("groqAiServiceImpl")
+    private val groqAiService: IGeminiAiService,
+    @Qualifier("geminiAiServiceImpl")
+    private val geminiAiService: IGeminiAiService
 ) : IGmailAutoReplyService {
 
     companion object {
@@ -141,14 +148,22 @@ class GmailAutoReplyServiceImpl(
                             val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
                             val memoryContext = correspondentMemoryService.buildMemoryContextText(memory)
 
-                            // Generate AI reply with memory context + fallback on failure
+                            // Get user's selected AI provider and custom prompt
+                            val botConfig = botConfigRepository.findByUserId(userId)
+                            val selectedProvider = botConfig?.aiProvider?.lowercase() ?: "groq"
+                            val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
+                            logger.debug("Using AI provider: $selectedProvider for user: $userId")
+
+                            // Generate AI reply with selected provider
                             logger.debug("Generating AI reply with memory for: $messageId")
                             var aiReply: String
                             try {
-                                aiReply = gmailApiService.generateAiReplyWithMemory(userId, messageId, memoryContext)
-                                logger.debug("AI reply generated with memory, length: ${aiReply.length}")
+                                val aiService = getAiServiceForProvider(selectedProvider)
+                                val fullPrompt = buildPromptWithMemory(emailContent, memoryContext, customPrompt)
+                                aiReply = aiService.generateText(fullPrompt)
+                                logger.debug("AI reply generated via $selectedProvider, length: ${aiReply.length}")
                             } catch (e: Exception) {
-                                logger.warn("⚠️ Failed to generate AI reply (${e.message}), using fallback response")
+                                logger.warn("⚠️ Failed to generate AI reply via $selectedProvider (${e.message}), using fallback response")
                                 aiReply = generateFallbackReply(emailFrom, emailSubject)
                                 logger.debug("Fallback reply used, length: ${aiReply.length}")
                             }
@@ -168,6 +183,16 @@ class GmailAutoReplyServiceImpl(
                                         bodyText = aiReply
                                     )
                                     logger.debug("Reply sent successfully")
+
+                                    // Save processed message with AI provider info
+                                    if (gmailApiService is GmailApiServiceImpl) {
+                                        gmailApiService.saveProcessedMessage(
+                                            userId = userId,
+                                            messageId = messageId,
+                                            threadId = threadId,
+                                            aiProvider = selectedProvider
+                                        )
+                                    }
                                 } catch (e: Exception) {
                                     logger.error("Failed to send reply: ${e.message}", e)
                                     throw e
@@ -198,7 +223,8 @@ class GmailAutoReplyServiceImpl(
                                         messageId = messageId,
                                         emailSubject = emailSubject,
                                         emailBody = emailContent,
-                                        replyBody = aiReply
+                                        replyBody = aiReply,
+                                        aiProvider = selectedProvider
                                     )
                                     logger.debug("Memory updated successfully")
                                 } catch (e: Exception) {
@@ -415,14 +441,71 @@ class GmailAutoReplyServiceImpl(
 
     /**
      * Generate fallback reply when AI generation fails
-     * Returns a polite, generic response that works for any email
-     * Used as failsafe when Gemini API is unavailable or returns error
+     * Notifies user that current AI provider is experiencing issues
+     * Used as failsafe when selected AI service (Groq/Gemini) is unavailable or returns error
      */
     private fun generateFallbackReply(senderEmail: String, senderSubject: String): String {
-        return """Thank you for reaching out. I have received your message and will get back to you as soon as possible. 
+        return """Thank you for your email. Our AI service is currently experiencing temporary issues. 
 
-If this is urgent, please feel free to contact me directly.
+Please try again in a few moments, or you may want to switch to an alternative AI provider for faster processing.
+
+We appreciate your patience and will resolve this shortly.
 
 Best regards"""
+    }
+
+    /**
+     * Build prompt with memory context and custom prompt for AI generation
+     * Formats the email, memory context, and custom instructions into a structured prompt
+     */
+    private fun buildPromptWithMemory(emailContent: String, memoryContext: String, customPrompt: String?): String {
+        return buildString {
+            append("You are an AI email assistant for auto-replies.\n\n")
+            append("INSTRUCTIONS:\n")
+            append("- Write professional, concise, friendly replies\n")
+            append("- Match the email's tone and style\n")
+            append("- Do NOT include greetings like 'Hi', 'Hello' or 'Dear'\n")
+            append("- Do NOT include signatures like 'Best regards', 'Thanks'\n")
+            append("- Do NOT make up information - only reply to what was asked\n")
+            append("- Be helpful and courteous\n")
+            append("- Keep replies 2-4 sentences max (unless complex topic)\n")
+            append("- Format: Direct reply without preamble\n\n")
+
+            // Add custom prompt if provided
+            if (!customPrompt.isNullOrBlank()) {
+                append("═══ CUSTOM INSTRUCTIONS ═══\n")
+                append(customPrompt)
+                append("\n\n")
+            }
+
+            if (memoryContext.isNotBlank()) {
+                append("═══ CONVERSATION HISTORY ═══\n")
+                append(memoryContext.take(800))
+                append("\n\n")
+            }
+
+            append("═══ EMAIL TO REPLY ═══\n")
+            append(emailContent.take(3000))
+            append("\n\n")
+            append("═══ YOUR REPLY (no greeting/signature) ═══\n")
+        }
+    }
+
+    /**
+     * Get the appropriate AI service based on user's provider preference
+     * @param provider "groq" or "gemini"
+     * @return IGeminiAiService instance (either Groq or Gemini impl)
+     */
+    private fun getAiServiceForProvider(provider: String): IGeminiAiService {
+        return when (provider.lowercase()) {
+            "gemini" -> {
+                logger.debug("Using Gemini AI service")
+                geminiAiService
+            }
+            else -> {
+                logger.debug("Using Groq AI service (default)")
+                groqAiService
+            }
+        }
     }
 }

@@ -20,7 +20,8 @@ data class MailboxItemResponse(
     val subject: String,
     val date: String,
     val snippet: String,
-    val labels: List<String>
+    val labels: List<String>,
+    val aiprovider: String? = null
 )
 
 data class MailboxPageResponse(

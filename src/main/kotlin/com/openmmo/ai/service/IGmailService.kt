@@ -39,6 +39,8 @@ interface IGmailBotService {
     fun updateConfig(userId: String, triggerSubject: String): Map<String, String>
     fun getPrompt(userId: String): Map<String, String>
     fun updatePrompt(userId: String, customPrompt: String): Map<String, String>
+    fun getAiProvider(userId: String): Map<String, String>
+    fun setAiProvider(userId: String, provider: String): Map<String, String>
 }
 
 /**

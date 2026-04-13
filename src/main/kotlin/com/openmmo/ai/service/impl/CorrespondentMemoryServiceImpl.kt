@@ -8,19 +8,24 @@ import com.openmmo.ai.entity.MemoryUpdateResponse
 import com.openmmo.ai.entity.StylePrefs
 import com.openmmo.ai.repository.CorrespondentMemoryRepository
 import com.openmmo.ai.service.ICorrespondentMemoryService
-import com.openmmo.ai.client.GeminiApiClient
+import com.openmmo.ai.service.IGeminiAiService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.beans.factory.annotation.Qualifier
 import java.time.LocalDateTime
 
 /**
  * Correspondent Memory Service Implementation
  * Manages per-correspondent conversation context, facts, and style preferences
+ * Uses user's selected AI provider (Groq or Gemini) to extract memory updates
  */
 @Service
 class CorrespondentMemoryServiceImpl(
     private val memoryRepository: CorrespondentMemoryRepository,
-    private val geminiApiClient: GeminiApiClient
+    @Qualifier("groqAiServiceImpl")
+    private val groqAiService: IGeminiAiService,
+    @Qualifier("geminiAiServiceImpl")
+    private val geminiAiService: IGeminiAiService
 ) : ICorrespondentMemoryService {
 
     companion object {
@@ -109,24 +114,26 @@ class CorrespondentMemoryServiceImpl(
         messageId: String,
         emailSubject: String,
         emailBody: String,
-        replyBody: String
+        replyBody: String,
+        aiProvider: String
     ): CorrespondentMemory {
         try {
-            logger.info("Updating memory for user=$userId, correspondent=$correspondentEmail")
+            logger.info("Updating memory for user=$userId, correspondent=$correspondentEmail using provider=$aiProvider")
 
             var memory = getOrCreate(userId, correspondentEmail)
 
             // Check if sensitive data present
             val isSensitive = detectSensitiveData(emailBody + "\n" + replyBody)
 
-            // Call Gemini to extract update
+            // Call selected AI provider to extract update
             val updateResponse = extractMemoryUpdate(
                 emailSubject,
                 emailBody,
                 replyBody,
                 memory.profileSummary,
                 memory.facts,
-                isSensitive
+                isSensitive,
+                aiProvider
             )
 
             // Merge update into memory
@@ -180,7 +187,8 @@ class CorrespondentMemoryServiceImpl(
         replyBody: String,
         currentSummary: String,
         currentFacts: List<MemoryFact>,
-        isSensitive: Boolean
+        isSensitive: Boolean,
+        aiProvider: String
     ): MemoryUpdateResponse {
         val factsStr = if (currentFacts.isNotEmpty()) {
             currentFacts.joinToString("\n") { "${it.key}: ${it.value}" }
@@ -191,7 +199,7 @@ class CorrespondentMemoryServiceImpl(
         val prompt = """
 You are an email memory manager. Extract key facts and insights from an email conversation.
 
-IMPORTANT RULES:
+INSTRUCTIONS:
 - Do NOT capture sensitive data (OTP, passwords, tokens, credit cards, personal IDs)
 - Only extract factual, non-sensitive information
 - Return valid JSON matching the schema below
@@ -234,16 +242,17 @@ Return ONLY valid JSON, no other text.
         """.trimIndent()
 
         val responseText = try {
-            geminiApiClient.generateText(prompt)
+            val aiService = getAiServiceForProvider(aiProvider)
+            aiService.generateText(prompt)
         } catch (e: Exception) {
-            logger.warn("Failed to call Gemini for memory update: ${e.message}")
+            logger.warn("Failed to call $aiProvider for memory update: ${e.message}")
             return MemoryUpdateResponse()
         }
 
         return try {
             objectMapper.readValue(responseText, MemoryUpdateResponse::class.java)
         } catch (e: Exception) {
-            logger.warn("Failed to parse Gemini response as JSON: ${e.message}, response=$responseText")
+            logger.warn("Failed to parse $aiProvider response as JSON: ${e.message}, response=$responseText")
             MemoryUpdateResponse()
         }
     }
@@ -331,6 +340,24 @@ Return ONLY valid JSON, no other text.
             summary.substring(0, MAX_SUMMARY_LENGTH) + "..."
         } else {
             summary
+        }
+    }
+
+    /**
+     * Get the appropriate AI service based on provider preference
+     * @param provider "groq" or "gemini"
+     * @return IGeminiAiService instance (either Groq or Gemini impl)
+     */
+    private fun getAiServiceForProvider(provider: String): IGeminiAiService {
+        return when (provider.lowercase()) {
+            "gemini" -> {
+                logger.debug("Using Gemini AI service for memory extraction")
+                geminiAiService
+            }
+            else -> {
+                logger.debug("Using Groq AI service for memory extraction (default)")
+                groqAiService
+            }
         }
     }
 }

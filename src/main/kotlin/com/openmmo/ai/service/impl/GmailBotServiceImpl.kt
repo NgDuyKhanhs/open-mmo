@@ -123,5 +123,44 @@ class GmailBotServiceImpl(
             "message" to if (promptToSave.isBlank()) "Prompt cleared, will use default" else "Custom prompt saved"
         )
     }
+
+    override fun getAiProvider(userId: String): Map<String, String> {
+        logger.debug("Getting AI provider for user: $userId")
+
+        val config = botConfigRepository.findByUserId(userId)
+        val provider = config?.aiProvider ?: "groq"
+
+        return mapOf(
+            "aiProvider" to provider,
+            "status" to "success"
+        )
+    }
+
+    override fun setAiProvider(userId: String, provider: String): Map<String, String> {
+        logger.info("Setting AI provider for user: $userId to: $provider")
+
+        val validProviders = setOf("groq", "gemini")
+        val normalizedProvider = provider.lowercase()
+
+        if (normalizedProvider !in validProviders) {
+            logger.warn("Invalid AI provider: $provider for user: $userId")
+            return mapOf(
+                "status" to "error",
+                "message" to "Invalid provider. Must be 'groq' or 'gemini'"
+            )
+        }
+
+        val config = botConfigRepository.findByUserId(userId)
+            ?: GmailBotConfig(userId = userId)
+
+        botConfigRepository.save(config.copy(aiProvider = normalizedProvider))
+        logger.debug("AI provider updated for user: $userId to: $normalizedProvider")
+
+        return mapOf(
+            "status" to "success",
+            "message" to "AI provider updated to: $normalizedProvider",
+            "aiProvider" to normalizedProvider
+        )
+    }
 }
 

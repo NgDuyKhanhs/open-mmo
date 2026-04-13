@@ -174,5 +174,26 @@ class GmailController(
         val result = autoReplyService.autoReplyEmails()
         return ResponseEntity.ok(result)
     }
+
+    @GetMapping("/ai-provider")
+    fun getAiProvider(
+        authentication: Authentication
+    ): ResponseEntity<Map<String, String>> {
+        val userId = authentication.name
+        logger.info("Getting AI provider for user: $userId")
+        val result = botService.getAiProvider(userId)
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/ai-provider")
+    fun setAiProvider(
+        @RequestParam provider: String,
+        authentication: Authentication
+    ): ResponseEntity<Map<String, String>> {
+        val userId = authentication.name
+        logger.info("Setting AI provider for user: $userId to: $provider")
+        val result = botService.setAiProvider(userId, provider)
+        return ResponseEntity.ok(result)
+    }
 }
 

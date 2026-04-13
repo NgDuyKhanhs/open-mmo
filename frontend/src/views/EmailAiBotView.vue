@@ -4,7 +4,7 @@
   import { computed, onMounted, ref } from 'vue'
   import { toast } from 'vue3-toastify'
   import navbarLogoUrl from '@/assets/navbar-logo.png'
-  import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon, Send, AlertOctagon } from 'lucide-vue-next'
+  import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon, Send, AlertOctagon, Zap, Gauge } from 'lucide-vue-next'
   import {
     getGmailStatus,
     startGmailConnection,
@@ -13,6 +13,8 @@
     updateBotConfig,
     updateCustomPrompt,
     getMailboxPage,
+    getAiProvider,
+    setAiProvider,
     type GmailStatus,
     type Email,
     type MailboxPageResponse,
@@ -58,17 +60,18 @@
     lastError: null,
   })
 
-  const emails = ref<Email[]>([])
-  const emailsCache = ref<Map<string, Email[]>>(new Map())
-  const selectedBox = ref<'inbox' | 'sent' | 'spam' | 'trash'>('inbox')
-  const selectedEmail = ref<Email | null>(null)
-  const isLoading = ref(false)
-  const isSaving = ref(false)
-  const showModal = ref(false)
-   const configSubject = ref('')
-   const configPrompt = ref('')
-   const showPromptHelp = ref(false)
-   const activeTab = ref<'mailbox' | 'config' | 'status'>('mailbox')
+   const emails = ref<Email[]>([])
+   const emailsCache = ref<Map<string, Email[]>>(new Map())
+   const selectedBox = ref<'inbox' | 'sent' | 'spam' | 'trash'>('inbox')
+   const selectedEmail = ref<Email | null>(null)
+   const isLoading = ref(false)
+   const isSaving = ref(false)
+   const showModal = ref(false)
+    const configSubject = ref('')
+    const configPrompt = ref('')
+    const showPromptHelp = ref(false)
+    const activeTab = ref<'mailbox' | 'config' | 'status' | 'connection'>('mailbox')
+    const selectedAiProvider = ref<'gemini' | 'groq'>('groq')
 
    // 🆕 Pagination state
    const currentPageToken = ref<string | null>(null)
@@ -287,29 +290,50 @@
     }
   }
 
-  // Update bot configuration
-  const updateConfig = async () => {
-    isSaving.value = true
-    try {
-      if (configSubject.value !== status.value.triggerSubject) {
-        await updateBotConfig(authStore.accessToken, {
-          triggerSubject: configSubject.value,
-        })
-      }
+   // Update bot configuration
+   const updateConfig = async () => {
+     isSaving.value = true
+     try {
+       if (configSubject.value !== status.value.triggerSubject) {
+         await updateBotConfig(authStore.accessToken, {
+           triggerSubject: configSubject.value,
+         })
+       }
 
-      if (configPrompt.value !== '') {
-        await updateCustomPrompt(authStore.accessToken, configPrompt.value)
-      }
+       if (configPrompt.value !== '') {
+         await updateCustomPrompt(authStore.accessToken, configPrompt.value)
+       }
 
-      await loadStatus()
-      toast.success('Configuration saved')
-    } catch (err) {
-      console.error('Failed to update config:', err)
-      toast.error(err instanceof Error ? err.message : 'Error updating configuration')
-    } finally {
-      isSaving.value = false
+       await loadStatus()
+       toast.success('Configuration saved')
+     } catch (err) {
+       console.error('Failed to update config:', err)
+       toast.error(err instanceof Error ? err.message : 'Error updating configuration')
+     } finally {
+       isSaving.value = false
+     }
+   }
+
+    // Change AI provider
+    const changeAiProvider = async (provider: 'gemini' | 'groq') => {
+      try {
+        selectedAiProvider.value = provider
+
+        // Save to localStorage for persistence
+        localStorage.setItem('selectedAiProvider', provider)
+
+        // Send to backend
+        if (authStore.accessToken) {
+          await setAiProvider(authStore.accessToken, provider)
+          console.log(`✅ Switched AI provider to ${provider} and saved to backend`)
+        }
+
+        toast.success(`Switched to ${provider === 'gemini' ? 'Gemini' : 'Groq'} AI provider`)
+      } catch (err) {
+        console.error('Failed to change AI provider:', err)
+        toast.error(err instanceof Error ? err.message : 'Error changing AI provider')
+      }
     }
-  }
 
    // Select mailbox and load emails
    const selectBox = async (box: typeof selectedBox.value) => {
@@ -344,15 +368,35 @@
     }
   }
 
-  // On mount
-  onMounted(async () => {
-    authStore.initializeAuth()
-    await checkOAuthCallback()
-    await loadStatus()
-    if (status.value.connected) {
-      await loadEmails()
-    }
-  })
+   // On mount
+   onMounted(async () => {
+     authStore.initializeAuth()
+
+     // Restore AI provider from localStorage first
+     const savedProvider = localStorage.getItem('selectedAiProvider')
+     if (savedProvider === 'gemini' || savedProvider === 'groq') {
+       selectedAiProvider.value = savedProvider
+     }
+
+     // Also try to load from backend
+     if (authStore.accessToken) {
+       try {
+         const backendProvider = await getAiProvider(authStore.accessToken)
+         if (backendProvider === 'gemini' || backendProvider === 'groq') {
+           selectedAiProvider.value = backendProvider
+           localStorage.setItem('selectedAiProvider', backendProvider)
+         }
+       } catch (err) {
+         console.debug('Could not load AI provider from backend, using localStorage:', err)
+       }
+     }
+
+     await checkOAuthCallback()
+     await loadStatus()
+     if (status.value.connected) {
+       await loadEmails()
+     }
+   })
 
   // Computed properties
   const statusMessage = computed(() => {
@@ -435,28 +479,34 @@
 
         <!-- Main Content Area -->
         <main v-if="status.connected" class="main-content">
-              <!-- Tab Navigation -->
-              <div class="tab-header">
-                 <button
-                   @click="activeTab = 'mailbox'"
-                   :class="['tab-button', { active: activeTab === 'mailbox' }]"
-                 >
-                   <Mail :size="18" class="tab-icon" />
-                 </button>
+               <!-- Tab Navigation -->
+               <div class="tab-header">
                   <button
-                    @click="switchToConfigTab"
-                    :class="['tab-button', { active: activeTab === 'config' }]"
+                    @click="activeTab = 'mailbox'"
+                    :class="['tab-button', { active: activeTab === 'mailbox' }]"
                   >
-                    <Settings :size="18" class="tab-icon" />
+                    <Mail :size="18" class="tab-icon" />
+                  </button>
+                   <button
+                     @click="switchToConfigTab"
+                     :class="['tab-button', { active: activeTab === 'config' }]"
+                   >
+                     <Settings :size="18" class="tab-icon" />
 
-                  </button>
-                  <button
-                    @click="activeTab = 'status'"
-                    :class="['tab-button', { active: activeTab === 'status' }]"
-                  >
-                    <LinkIcon :size="18" class="tab-icon" />
-                  </button>
-              </div>
+                   </button>
+                   <button
+                     @click="activeTab = 'status'"
+                     :class="['tab-button', { active: activeTab === 'status' }]"
+                   >
+                     <Bot :size="18" class="tab-icon" />
+                   </button>
+                   <button
+                     @click="activeTab = 'connection'"
+                     :class="['tab-button', { active: activeTab === 'connection' }]"
+                   >
+                     <LinkIcon :size="18" class="tab-icon" />
+                   </button>
+               </div>
 
            <!-- Tab Content -->
            <div class="tab-content">
@@ -513,21 +563,24 @@
                     <span>No emails matching "{{ status.triggerSubject }}"</span>
                   </div>
                 <div v-else class="email-items">
-                  <div
-                    v-for="email in filteredEmails"
-                    :key="email.id"
-                    @click="selectEmail(email)"
-                    class="email-item"
-                  >
-                    <div class="email-from">
-                      <Mail size="14" />
-                      {{ extractEmail(email.from) }}
-                    </div>
-                    <div class="email-subject">{{ email.subject }}</div>
-                    <div class="email-snippet">{{ email.snippet }}</div>
-                    <div class="email-date">{{ formatDate(email.date) }}</div>
-                  </div>
-                </div>
+                   <div
+                     v-for="email in filteredEmails"
+                     :key="email.id"
+                     @click="selectEmail(email)"
+                     class="email-item"
+                   >
+                     <div v-if="email.aiprovider" class="email-provider">
+                       {{ email.aiprovider.charAt(0).toUpperCase() + email.aiprovider.slice(1) }}
+                     </div>
+                     <div class="email-from">
+                       <Mail size="14" />
+                       {{ extractEmail(email.from) }}
+                     </div>
+                     <div class="email-subject">{{ email.subject }}</div>
+                     <div class="email-snippet">{{ email.snippet }}</div>
+                     <div class="email-date">{{ formatDate(email.date) }}</div>
+                   </div>
+                 </div>
               </div>
 
                 <!-- Pagination Controls -->
@@ -604,101 +657,150 @@
                </div>
              </div>
 
-              <!-- Connection Status Tab -->
-              <div v-show="activeTab === 'status'" class="status-section tab-pane">
-                <div class="status-content">
-                  <div class="status-header">
-                    <h3 class="status-section-title">Connection</h3>
-                    <p class="status-subtitle">Manage your Gmail account and bot settings</p>
-                  </div>
+               <!-- Status Tab - Bot Status Only -->
+               <div v-show="activeTab === 'status'" class="status-section tab-pane">
+                 <div class="status-content">
+                   <div class="status-header">
+                     <h3 class="status-section-title">Bot Status</h3>
+                     <p class="status-subtitle">View bot's current state and statistics</p>
+                   </div>
 
-                  <!-- Primary Connection Card -->
-                  <div v-if="!status.connected" class="primary-connection-card disconnected-card">
-                    <div class="connection-icon disconnected-icon">
-                      <AlertCircle :size="48" />
-                    </div>
-                    <div class="connection-info">
-                      <h4 class="connection-title">Gmail Account Not Connected</h4>
-                      <p class="connection-description">Connect your Gmail account to enable AI-powered auto-replies</p>
-                      <button @click="connectGmail" class="btn btn-primary btn-large" :disabled="isLoading">
-                        <LinkIcon v-if="!isLoading" :size="16" />
-                        <span v-if="!isLoading">Connect Gmail Account</span>
-                        <span v-else>Connecting...</span>
-                      </button>
-                    </div>
-                  </div>
+                   <!-- Status Grid -->
+                   <div class="status-grid-modern">
+                     <!-- Bot Status -->
+                     <div v-if="status.connected" class="modern-card bot-card">
+                       <div class="card-header">
+                         <Bot :size="18" class="card-icon" />
+                         <span class="card-title">Bot Status</span>
+                       </div>
+                       <div class="card-content">
+                         <div class="bot-toggle-large">
+                           <label class="toggle-switch-large">
+                             <input
+                               type="checkbox"
+                               :checked="status.botEnabled"
+                               @change="toggleBot"
+                               :disabled="isSaving"
+                             />
+                             <span class="toggle-slider-large"></span>
+                           </label>
+                           <div class="toggle-info">
+                             <span :class="['status-badge-small', status.botEnabled ? 'active' : 'inactive']">
+                               {{ status.botEnabled ? '● Running' : '● Paused' }}
+                             </span>
+                             <span class="toggle-description">
+                               {{ status.botEnabled ? 'Auto-replies are enabled' : 'Auto-replies are paused' }}
+                             </span>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
 
-                  <div v-else class="primary-connection-card connected-card">
-                    <div class="connection-icon connected-icon">
-                      <CheckCircle2 :size="48" />
-                    </div>
-                    <div class="connection-info">
-                      <h4 class="connection-title">Connected</h4>
-                      <p class="connection-email">{{ status.gmailAddress }}</p>
-                    </div>
-                  </div>
+                     <!-- Last Run Info -->
+                     <div v-if="status.lastRunAt" class="modern-card run-card">
+                       <div class="card-header">
+                         <Clock :size="18" class="card-icon" />
+                         <span class="card-title">Last Run</span>
+                       </div>
+                       <div class="card-content">
+                         <p class="run-time">{{ formatDate(status.lastRunAt) }}</p>
+                         <p class="run-hint">Last time the bot processed emails</p>
+                       </div>
+                     </div>
 
-                  <!-- Status Grid -->
-                  <div class="status-grid-modern">
-                    <!-- Bot Status -->
-                    <div v-if="status.connected" class="modern-card bot-card">
-                      <div class="card-header">
-                        <Bot :size="18" class="card-icon" />
-                        <span class="card-title">Bot Status</span>
-                      </div>
-                      <div class="card-content">
-                        <div class="bot-toggle-large">
-                          <label class="toggle-switch-large">
-                            <input
-                              type="checkbox"
-                              :checked="status.botEnabled"
-                              @change="toggleBot"
-                              :disabled="isSaving"
-                            />
-                            <span class="toggle-slider-large"></span>
-                          </label>
-                          <div class="toggle-info">
-                            <span :class="['status-badge-small', status.botEnabled ? 'active' : 'inactive']">
-                              {{ status.botEnabled ? '● Running' : '● Paused' }}
-                            </span>
-                            <span class="toggle-description">
-                              {{ status.botEnabled ? 'Auto-replies are enabled' : 'Auto-replies are paused' }}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                     <!-- Error Info -->
+                     <div v-if="status.lastError" class="modern-card error-card">
+                       <div class="card-header error-header">
+                         <AlertTriangle :size="18" class="card-icon" />
+                         <span class="card-title">Last Error</span>
+                       </div>
+                       <div class="card-content">
+                         <p class="error-message">{{ status.lastError }}</p>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
 
+               <!-- Connection Tab - Account & AI Provider Selection -->
+               <div v-show="activeTab === 'connection'" class="connection-section tab-pane">
+                 <div class="connection-content">
+                   <div class="connection-header">
+                     <h3 class="connection-section-title">Account & AI Provider</h3>
+                     <p class="connection-subtitle">Manage Gmail connection and select your AI model</p>
+                   </div>
 
+                   <!-- Primary Connection Card -->
+                   <div v-if="!status.connected" class="primary-connection-card disconnected-card">
+                     <div class="connection-icon disconnected-icon">
+                       <AlertCircle :size="48" />
+                     </div>
+                     <div class="connection-info">
+                       <h4 class="connection-title">Gmail Account Not Connected</h4>
+                       <p class="connection-description">Connect your Gmail account to enable AI-powered auto-replies</p>
+                       <button @click="connectGmail" class="btn btn-primary btn-large" :disabled="isLoading">
+                         <LinkIcon v-if="!isLoading" :size="16" />
+                         <span v-if="!isLoading">Connect Gmail Account</span>
+                         <span v-else>Connecting...</span>
+                       </button>
+                     </div>
+                   </div>
 
-                    <!-- Last Run Info -->
-                    <div v-if="status.lastRunAt" class="modern-card run-card">
-                      <div class="card-header">
-                        <Clock :size="18" class="card-icon" />
-                        <span class="card-title">Last Run</span>
-                      </div>
-                      <div class="card-content">
-                        <p class="run-time">{{ formatDate(status.lastRunAt) }}</p>
-                        <p class="run-hint">Last time the bot processed emails</p>
-                      </div>
-                    </div>
+                   <div v-else class="primary-connection-card connected-card">
+                     <div class="connection-icon connected-icon">
+                       <CheckCircle2 :size="48" />
+                     </div>
+                     <div class="connection-info">
+                       <h4 class="connection-title">Connected</h4>
+                       <p class="connection-email">{{ status.gmailAddress }}</p>
+                     </div>
+                   </div>
 
-                    <!-- Error Info -->
-                    <div v-if="status.lastError" class="modern-card error-card">
-                      <div class="card-header error-header">
-                        <AlertTriangle :size="18" class="card-icon" />
-                        <span class="card-title">Last Error</span>
-                      </div>
-                      <div class="card-content">
-                        <p class="error-message">{{ status.lastError }}</p>
-                      </div>
-                    </div>
-                  </div>
+                   <!-- AI Provider Selection -->
+                   <div v-if="status.connected" class="ai-provider-section">
+                     <div class="provider-header">
 
-                  <!-- Quick Stats -->
+                       <p class="provider-description">Choose which AI model to use for auto-replies</p>
+                     </div>
 
-                </div>
-              </div>
+                     <div class="provider-grid">
+                       <!-- Groq Option -->
+                       <div
+                         @click="changeAiProvider('groq')"
+                         :class="['provider-card', { selected: selectedAiProvider === 'groq' }]"
+                       >
+                         <div class="provider-card-header">
+                           <Zap :size="24" class="provider-icon groq-icon" />
+                           <span class="provider-name">Groq</span>
+                         </div>
+                         <div class="provider-details">
+                           <p class="provider-feature">⚡ Fast & Cheap</p>
+                           <p class="provider-feature">30 requests/min</p>
+                           <p class="provider-feature">Recommended</p>
+                         </div>
+                         <div v-if="selectedAiProvider === 'groq'" class="provider-checkmark">✓</div>
+                       </div>
+
+                       <!-- Gemini Option -->
+                       <div
+                         @click="changeAiProvider('gemini')"
+                         :class="['provider-card', { selected: selectedAiProvider === 'gemini' }]"
+                       >
+                         <div class="provider-card-header">
+                           <Gauge :size="24" class="provider-icon gemini-icon" />
+                           <span class="provider-name">Gemini</span>
+                         </div>
+                         <div class="provider-details">
+                           <p class="provider-feature">🔬 Advanced</p>
+                           <p class="provider-feature">High Quality</p>
+                           <p class="provider-feature">Premium Model</p>
+                         </div>
+                         <div v-if="selectedAiProvider === 'gemini'" class="provider-checkmark">✓</div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
            </div>
          </main>
        </div>
@@ -1622,20 +1724,20 @@ Best regards</div>
     gap: 8px;
   }
 
-   .email-item {
-     padding: 12px 14px;
-     border-radius: 10px;
-     border: 1px solid rgba(0, 240, 255, 0.12);
-     background: rgba(0, 240, 255, 0.03);
-     cursor: pointer;
-     transition: all 0.25s ease;
-     display: grid;
-     grid-template-columns: 1fr auto;
-     grid-template-rows: auto auto auto;
-     gap: 4px 12px;
-     position: relative;
-     min-height: 60px;
-   }
+    .email-item {
+      padding: 22px 14px 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 240, 255, 0.12);
+      background: rgba(0, 240, 255, 0.03);
+      cursor: pointer;
+      transition: all 0.25s ease;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto auto auto;
+      gap: 4px 12px;
+      position: relative;
+      min-height: 60px;
+    }
 
    .email-item:hover {
      border-color: rgba(0, 240, 255, 0.25);
@@ -1698,15 +1800,192 @@ Best regards</div>
      margin: 0;
      grid-column: 2;
      grid-row: 1 / 3;
-     display: flex;
-     align-items: center;
-     justify-content: flex-end;
-     text-align: right;
-     white-space: nowrap;
-     padding-left: 8px;
-   }
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      text-align: right;
+      white-space: nowrap;
+      padding-left: 8px;
+    }
 
-   /* Pagination Controls */
+    .email-provider {
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      font-size: 8px;
+      font-weight: 900;
+      color: #fff;
+      background: linear-gradient(135deg, #0099ff 0%, #0077cc 100%);
+      padding: 5px 16px 5px 10px;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      z-index: 10;
+      box-shadow:
+        0 3px 10px rgba(0, 153, 255, 0.4),
+        -2px 2px 5px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      /* Ribbon tail style - cắt góc bên phải */
+      clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+      transform: skewX(-3deg);
+      box-sizing: border-box;
+    }
+
+    .email-provider::before {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 0;
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 0 solid transparent;
+      border-top: 5px solid #005599;
+    }
+
+    .email-provider::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      right: 0;
+      width: 0;
+      height: 0;
+      border-right: 10px solid transparent;
+      border-left: 0 solid transparent;
+      border-top: 5px solid #005599;
+    }
+
+    /* Responsive - Tablet */
+    @media (max-width: 1024px) {
+      .email-provider {
+        font-size: 7px;
+        padding: 4px 14px 4px 9px;
+        letter-spacing: 0.8px;
+        clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%);
+        box-shadow:
+          0 2px 8px rgba(0, 153, 255, 0.35),
+          -2px 2px 4px rgba(0, 0, 0, 0.15),
+          inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      }
+
+      .email-provider::before {
+        border-left: 4px solid transparent;
+        border-top: 4px solid #005599;
+        bottom: -4px;
+      }
+
+      .email-provider::after {
+        border-right: 8px solid transparent;
+        border-top: 4px solid #005599;
+        bottom: -4px;
+      }
+
+      .email-item {
+        padding: 20px 12px 10px 12px;
+        gap: 3px 10px;
+      }
+    }
+
+    /* Responsive - Mobile */
+    @media (max-width: 768px) {
+      .email-provider {
+        font-size: 6px;
+        padding: 3px 12px 3px 8px;
+        letter-spacing: 0.5px;
+        top: -1px;
+        left: -1px;
+        clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%);
+        box-shadow:
+          0 2px 6px rgba(0, 153, 255, 0.3),
+          -1px 1px 3px rgba(0, 0, 0, 0.1),
+          inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      }
+
+      .email-provider::before {
+        border-left: 3px solid transparent;
+        border-top: 3px solid #005599;
+        bottom: -3px;
+      }
+
+      .email-provider::after {
+        border-right: 6px solid transparent;
+        border-top: 3px solid #005599;
+        bottom: -3px;
+      }
+
+      .email-item {
+        padding: 18px 10px 8px 10px;
+        gap: 2px 8px;
+        min-height: 55px;
+      }
+
+      .email-from {
+        font-size: 11px;
+        gap: 4px;
+      }
+
+      .email-subject {
+        font-size: 12px;
+      }
+
+      .email-snippet {
+        font-size: 10px;
+      }
+
+      .email-date {
+        font-size: 9px;
+      }
+    }
+
+    /* Responsive - Small Mobile */
+    @media (max-width: 480px) {
+      .email-provider {
+        font-size: 5px;
+        padding: 2px 10px 2px 6px;
+        letter-spacing: 0.3px;
+        font-weight: 800;
+        clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 50%, calc(100% - 5px) 100%, 0 100%);
+        box-shadow:
+          0 1px 4px rgba(0, 153, 255, 0.25),
+          -1px 1px 2px rgba(0, 0, 0, 0.08);
+      }
+
+      .email-provider::before {
+        border-left: 2px solid transparent;
+        border-top: 2px solid #005599;
+        bottom: -2px;
+      }
+
+      .email-provider::after {
+        border-right: 4px solid transparent;
+        border-top: 2px solid #005599;
+        bottom: -2px;
+      }
+
+      .email-item {
+        padding: 16px 8px 6px 8px;
+        gap: 2px 6px;
+      }
+
+      .email-from {
+        font-size: 10px;
+        gap: 3px;
+      }
+
+      .email-subject {
+        font-size: 11px;
+      }
+
+      .email-snippet {
+        font-size: 9px;
+      }
+
+      .email-date {
+        font-size: 8px;
+      }
+    }
+
+    /* Pagination Controls */
    .pagination-controls {
      display: flex;
      justify-content: space-between;
@@ -2174,15 +2453,13 @@ Best regards</div>
       gap: 20px;
       padding: 24px;
       border-radius: 14px;
-      border: 1px solid rgba(0, 240, 255, 0.2);
-      backdrop-filter: blur(10px);
-      margin-bottom: 24px;
+      border: 1px solid rgba(0, 240, 255, 0.12);
       transition: all 0.3s ease;
     }
 
     .primary-connection-card.connected-card {
-      background: linear-gradient(135deg, rgba(0, 200, 100, 0.08), rgba(0, 240, 255, 0.08));
-      border-color: rgba(0, 200, 100, 0.3);
+      background: rgba(0, 240, 255, 0.04);
+      border: 1px solid rgba(0, 240, 255, 0.12);
     }
 
     .primary-connection-card.disconnected-card {
@@ -2889,9 +3166,162 @@ Best regards</div>
         font-size: 12px;
       }
 
-      .status-badge-large {
-        font-size: 11px;
+       .status-badge-large {
+         font-size: 11px;
+       }
       }
-     }
+
+  /* Connection Section Styles */
+  .connection-section {
+    min-height: 400px;
+  }
+
+  .connection-content,
+  .status-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .connection-header,
+  .status-header {
+    margin-bottom: 12px;
+  }
+
+  .connection-section-title,
+  .status-section-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #e8f7ff;
+  }
+
+  .connection-subtitle,
+  .status-subtitle {
+    margin: 8px 0 0 0;
+    font-size: 13px;
+    color: rgba(232, 247, 255, 0.6);
+  }
+
+  /* AI Provider Selection */
+  .ai-provider-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 12px;
+    background: rgba(0, 240, 255, 0.04);
+    border: 1px solid rgba(0, 240, 255, 0.12);
+  }
+
+  .provider-header {
+    margin-bottom: 8px;
+  }
+
+  .provider-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #e8f7ff;
+  }
+
+  .provider-description {
+    margin: 6px 0 0 0;
+    font-size: 12px;
+    color: rgba(232, 247, 255, 0.6);
+  }
+
+  .provider-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .provider-card {
+    padding: 16px;
+    border-radius: 12px;
+    border: 2px solid rgba(0, 240, 255, 0.15);
+    background: rgba(0, 240, 255, 0.04);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .provider-card:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+    background: rgba(0, 240, 255, 0.08);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 240, 255, 0.1);
+  }
+
+  .provider-card.selected {
+    border-color: rgba(0, 240, 255, 0.5);
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.12), rgba(0, 240, 255, 0.06));
+    box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15), inset 0 1px 0 rgba(0, 240, 255, 0.15);
+  }
+
+  .provider-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .provider-icon {
+    color: #00f0ff;
+  }
+
+  .provider-icon.groq-icon {
+    color: #00d4ff;
+  }
+
+  .provider-icon.gemini-icon {
+    color: #ff9d00;
+  }
+
+  .provider-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e8f7ff;
+  }
+
+  .provider-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .provider-feature {
+    margin: 0;
+    font-size: 11px;
+    color: rgba(232, 247, 255, 0.7);
+    font-weight: 500;
+  }
+
+  .provider-checkmark {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 200, 100, 0.2);
+    color: #00c864;
+    font-size: 14px;
+    font-weight: 700;
+    border: 1px solid rgba(0, 200, 100, 0.4);
+  }
+
+  /* Responsive Provider Grid */
+  @media (max-width: 768px) {
+    .provider-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 

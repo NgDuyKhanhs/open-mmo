@@ -104,3 +104,11 @@ token:
 gemini:
   api-key: ${GEMINI_API_KEY:}
 
+# ==============================================
+# Groq Configuration (Fast AI for Auto-Reply)
+# ==============================================
+# Set GROQ_API_KEY environment variable
+# Get from: https://www.groq.com/
+# Free tier: 30 requests/minute (sufficient for auto-reply)
+groq:
+  api-key: ${GROQ_API_KEY:}

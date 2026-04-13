@@ -12,6 +12,7 @@ data class GmailProcessedMessage(
     val userId: String,
     val messageId: String,
     val threadId: String,
+    val aiProvider: String? = null,
     @Indexed(expireAfterSeconds = 7776000) // 90 days TTL
     val processedAt: LocalDateTime = LocalDateTime.now()
 )

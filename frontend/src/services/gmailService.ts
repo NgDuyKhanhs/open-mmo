@@ -29,6 +29,7 @@ export interface Email {
   date: string
   snippet: string
   labels: string[]
+  aiprovider?: string
 }
 
 export interface MailboxPageResponse {
@@ -281,6 +282,41 @@ export async function getMailboxPage(
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
+
+/**
+ * Get user's selected AI provider
+ * @param token - User's JWT access token
+ * @returns AI provider ("groq" or "gemini")
+ */
+export async function getAiProvider(token: string): Promise<string> {
+  const freshToken = await ensureTokenFresh(token)
+  const response = await fetch(`${API_BASE_URL}/ai-provider`, {
+    method: 'GET',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+  })
+  const data = await handleResponse<{ aiProvider: string }>(response)
+  return data.aiProvider
+}
+
+/**
+ * Set user's selected AI provider
+ * @param token - User's JWT access token
+ * @param provider - "groq" or "gemini"
+ * @returns Success response
+ */
+export async function setAiProvider(token: string, provider: string): Promise<{ status: string; aiProvider: string }> {
+  const freshToken = await ensureTokenFresh(token)
+  const url = new URL(`${API_BASE_URL}/ai-provider`)
+  url.searchParams.append('provider', provider)
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+  })
+  return handleResponse<{ status: string; aiProvider: string }>(response)
+}
 
 /**
  * Format email date to readable string

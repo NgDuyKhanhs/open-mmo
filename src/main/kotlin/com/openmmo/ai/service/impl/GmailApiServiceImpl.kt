@@ -7,15 +7,18 @@ import com.openmmo.ai.dto.MailboxItemResponse
 import com.openmmo.ai.dto.MailboxPageResponse
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailOAuthService
-import com.openmmo.ai.service.IGeminiAiService
 import com.openmmo.ai.repository.GmailBotConfigRepository
+import com.openmmo.ai.repository.GmailProcessedMessageRepository
+import com.openmmo.ai.entity.GmailProcessedMessage
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
+import com.openmmo.ai.client.GroqApiClient
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ForkJoinPool
+import java.time.LocalDateTime
 
 data class MailboxItem(
     val id: String,
@@ -33,13 +36,15 @@ data class MailboxItem(
  * Performance optimizations:
  * - Token caching: Per-request (ThreadLocal) to avoid refresh per email
  * - Config caching: 5-min TTL via @Cacheable
+ * - Uses Groq API for fast & cheap AI text generation
  */
 @Service
 class GmailApiServiceImpl(
     private val connectionRepository: GmailConnectionRepository,
     private val botConfigRepository: GmailBotConfigRepository,
+    private val gmailProcessedMessageRepository: GmailProcessedMessageRepository,
     private val oauthService: IGmailOAuthService,
-    private val geminiAiService: IGeminiAiService,
+    private val groqApiClient: GroqApiClient,
     private val gmailApiClient: GmailApiClient,
     @Value("\${token.enc.key-base64}") private val tokenEncKey: String
 ) : IGmailApiService {
@@ -88,7 +93,7 @@ class GmailApiServiceImpl(
                 val nextPageToken = response["nextPageToken"] as? String
                 logger.info("Found ${messages.size} messages in initial fetch")
 
-                return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime)
+                return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime, boxType)
             } catch (e: org.springframework.web.client.HttpClientErrorException) {
                 // If 401 Unauthorized, refresh token and retry
                 if (e.statusCode.value() == 401) {
@@ -105,7 +110,7 @@ class GmailApiServiceImpl(
                     val nextPageToken = response["nextPageToken"] as? String
                     logger.info("Found ${messages.size} messages in retry fetch")
 
-                    return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime)
+                    return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime, boxType)
                 } else {
                     throw e
                 }
@@ -124,7 +129,8 @@ class GmailApiServiceImpl(
         messages: List<Map<String, String>>,
         nextPageToken: String?,
         pageSize: Int,
-        startTime: Long
+        startTime: Long,
+        boxType: String
     ): MailboxPageResponse {
         // Get access token for fetching message details
         val connection = connectionRepository.findByUserId(userId)
@@ -139,6 +145,15 @@ class GmailApiServiceImpl(
             CompletableFuture.supplyAsync({
                 try {
                     val full = getMessageDetailsMetadata(accessToken, msgId, threadId)
+
+                    // Look up aiProvider if this is a sent email
+                    var aiProvider: String? = null
+                    if (boxType == "sent") {
+                        // Query by threadId to find the reply record
+                        val processed = gmailProcessedMessageRepository.findByUserIdAndThreadId(userId, threadId)
+                        aiProvider = processed?.aiProvider
+                    }
+
                     MailboxItemResponse(
                         id = full.id,
                         threadId = threadId,
@@ -146,7 +161,8 @@ class GmailApiServiceImpl(
                         subject = full.subject,
                         date = full.date,
                         snippet = full.snippet,
-                        labels = full.labels
+                        labels = full.labels,
+                        aiprovider = aiProvider
                     )
                 } catch (e: Exception) {
                     logger.warn("Failed to get details for message $msgId: ${e.message}")
@@ -285,8 +301,8 @@ $encodedBody
             // Build unified prompt
             val fullPrompt = buildPrompt(emailContent, customPrompt, memoryContext = null)
 
-            // Generate reply using Gemini
-            val aiReply = geminiAiService.generateText(fullPrompt)
+            // Generate reply using Groq
+            val aiReply = groqApiClient.generateText(fullPrompt)
             logger.debug("AI reply generated successfully, length: ${aiReply.length}")
 
             return aiReply
@@ -309,8 +325,8 @@ $encodedBody
             // Build unified prompt with memory
             val fullPrompt = buildPrompt(emailContent, customPrompt, memoryContext)
 
-            // Generate reply using full prompt
-            val aiReply = geminiAiService.generateText(fullPrompt)
+            // Generate reply using Groq
+            val aiReply = groqApiClient.generateText(fullPrompt)
             logger.debug("AI reply with memory generated successfully, length: ${aiReply.length}")
 
             return aiReply
@@ -591,6 +607,28 @@ $encodedBody
             } else {
                 throw e
             }
+        }
+    }
+
+    /**
+     * Save the AI provider for a processed message
+     * Called after sending a reply to track which AI provider was used
+     */
+    fun saveProcessedMessage(userId: String, messageId: String, threadId: String, aiProvider: String) {
+        try {
+            logger.debug("Saving processed message record: userId=$userId, messageId=$messageId, aiProvider=$aiProvider")
+            val processed = GmailProcessedMessage(
+                userId = userId,
+                messageId = messageId,
+                threadId = threadId,
+                aiProvider = aiProvider,
+                processedAt = LocalDateTime.now()
+            )
+            gmailProcessedMessageRepository.save(processed)
+            logger.debug("Processed message saved successfully")
+        } catch (e: Exception) {
+            logger.warn("Failed to save processed message record (non-fatal): ${e.message}")
+            // Non-fatal error - don't throw, just log
         }
     }
 }

@@ -21,7 +21,7 @@ interface ICorrespondentMemoryService {
 
     /**
      * Update memory after reply is sent
-     * Uses Gemini to extract and update facts, summary, style preferences
+     * Uses selected AI provider (Groq or Gemini) to extract and update facts, summary, style preferences
      * @param userId User ID
      * @param correspondentEmail Correspondent email
      * @param threadId Gmail thread ID
@@ -29,6 +29,7 @@ interface ICorrespondentMemoryService {
      * @param emailSubject Original email subject
      * @param emailBody Original email body
      * @param replyBody Reply body we sent
+     * @param aiProvider Selected AI provider ("groq" or "gemini")
      * @return Updated CorrespondentMemory
      */
     fun updateAfterReply(
@@ -38,7 +39,8 @@ interface ICorrespondentMemoryService {
         messageId: String,
         emailSubject: String,
         emailBody: String,
-        replyBody: String
+        replyBody: String,
+        aiProvider: String = "groq"
     ): CorrespondentMemory
 
     /**
