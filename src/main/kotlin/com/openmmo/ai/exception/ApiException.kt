@@ -67,3 +67,12 @@ class UpstreamException(
     cause: Throwable? = null
 ) : ApiException(message, HttpStatus.BAD_GATEWAY, code, cause)
 
+/**
+ * Gmail refresh token invalid or expired exception
+ * Indicates the user needs to reconnect their Gmail account
+ */
+class GmailRefreshTokenException(
+    message: String = "Gmail refresh token is invalid or expired. Please reconnect your Gmail account.",
+    code: String = "GMAIL_REFRESH_TOKEN_INVALID",
+    cause: Throwable? = null
+) : ApiException(message, HttpStatus.UNAUTHORIZED, code, cause)

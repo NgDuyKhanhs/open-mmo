@@ -4,6 +4,7 @@ import com.openmmo.ai.client.GmailOAuthClient
 import com.openmmo.ai.entity.GmailConnection
 import com.openmmo.ai.entity.GmailBotConfig
 import com.openmmo.ai.exception.UpstreamException
+import com.openmmo.ai.exception.GmailRefreshTokenException
 import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.service.IGmailOAuthService
@@ -128,7 +129,17 @@ class GmailOAuthServiceImpl(
             logger.debug("Gmail access token refreshed successfully")
             return accessToken
         } catch (e: HttpClientErrorException) {
-            logger.error("HTTP error refreshing Gmail token: ${e.statusCode}")
+            logger.error("HTTP error refreshing Gmail token: ${e.statusCode} - ${e.responseBodyAsString}")
+
+            // 401 Unauthorized indicates refresh token is invalid or expired
+            if (e.statusCode.value() == 401) {
+                logger.error("Refresh token is invalid or expired. User must reconnect Gmail.")
+                throw GmailRefreshTokenException(
+                    "Gmail refresh token is invalid or expired. Please reconnect your Gmail account.",
+                    cause = e
+                )
+            }
+
             throw UpstreamException("Failed to refresh Gmail token: ${e.statusCode}")
         } catch (e: Exception) {
             logger.error("Error refreshing Gmail token: ${e.message}")

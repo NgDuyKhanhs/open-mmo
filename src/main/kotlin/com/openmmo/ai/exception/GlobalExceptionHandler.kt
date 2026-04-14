@@ -23,6 +23,28 @@ class GlobalExceptionHandler {
     private val logger = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
     /**
+     * Handle Gmail refresh token exceptions
+     */
+    @ExceptionHandler(GmailRefreshTokenException::class)
+    fun handleGmailRefreshTokenException(
+        ex: GmailRefreshTokenException,
+        request: WebRequest
+    ): ResponseEntity<ErrorResponse> {
+        logger.warn("Gmail refresh token exception: ${ex.message}")
+
+        return ResponseEntity(
+            ErrorResponse(
+                success = false,
+                message = ex.message ?: "Gmail refresh token is invalid",
+                error = ex.code,
+                path = request.getDescription(false).replace("uri=", ""),
+                timestamp = System.currentTimeMillis()
+            ),
+            HttpStatus.UNAUTHORIZED
+        )
+    }
+
+    /**
      * Handle custom API exceptions
      */
     @ExceptionHandler(ApiException::class)

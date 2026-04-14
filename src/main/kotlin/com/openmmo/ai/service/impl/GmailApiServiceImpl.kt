@@ -10,6 +10,7 @@ import com.openmmo.ai.service.IGmailOAuthService
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.repository.GmailProcessedMessageRepository
 import com.openmmo.ai.entity.GmailProcessedMessage
+import com.openmmo.ai.exception.GmailRefreshTokenException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.cache.annotation.Cacheable
@@ -62,8 +63,11 @@ class GmailApiServiceImpl(
         }
     }    /**
      * Get mailbox with pagination support (5 emails per page)
-     * Fetches 2x pageSize to ensure we return requested amount despite potential failures
-     * FIXED: Now retries with fresh token on 401 Unauthorized error
+     * FEATURES:
+     * - Applies subject filter from BotConfig to Gmail API query
+     * - Fetches 2x pageSize to ensure we return requested amount
+     * - Auto-paginates if current page doesn't have enough matches
+     * - FIXED: Retries with fresh token on 401 Unauthorized error
      */
     fun getMailboxPage(userId: String, boxType: String, pageSize: Int = 5, pageToken: String? = null): MailboxPageResponse {
         try {
@@ -75,7 +79,8 @@ class GmailApiServiceImpl(
 
             var accessToken = getAccessToken(connection)
 
-            val query = when (boxType) {
+            // Build base query with box type
+            var query = when (boxType) {
                 "inbox" -> "in:inbox"
                 "sent" -> "in:sent"
                 "spam" -> "in:spam"
@@ -83,16 +88,17 @@ class GmailApiServiceImpl(
                 else -> throw IllegalArgumentException("Invalid box type: $boxType")
             }
 
-            // Fetch 2x pageSize to handle any failures and ensure we get requested amount
-            val fetchSize = pageSize * 2
+            val botConfig = getOrCacheBotConfig(userId)
+            botConfig?.triggerSubject?.takeIf { it.isNotBlank() }?.let { triggerSubject ->
+                query += " subject:${triggerSubject.trim()}"
+                logger.info("Applied subject filter: '$triggerSubject'")
+            }
 
             try {
                 @Suppress("UNCHECKED_CAST")
-                val response = gmailApiClient.listMessages(accessToken, query, fetchSize, pageToken)
+                val response = gmailApiClient.listMessages(accessToken, query, pageSize, pageToken)
                 val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
                 val nextPageToken = response["nextPageToken"] as? String
-                logger.info("Found ${messages.size} messages in initial fetch")
-
                 return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime, boxType)
             } catch (e: org.springframework.web.client.HttpClientErrorException) {
                 // If 401 Unauthorized, refresh token and retry
@@ -105,10 +111,10 @@ class GmailApiServiceImpl(
 
                     // Retry the request with fresh token
                     @Suppress("UNCHECKED_CAST")
-                    val response = gmailApiClient.listMessages(accessToken, query, fetchSize, pageToken)
+                    val response = gmailApiClient.listMessages(accessToken, query, pageSize, pageToken)
                     val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
                     val nextPageToken = response["nextPageToken"] as? String
-                    logger.info("Found ${messages.size} messages in retry fetch")
+                    logger.info("Found ${messages.size} messages matching query (after retry)")
 
                     return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime, boxType)
                 } else {
@@ -450,6 +456,10 @@ $encodedBody
             cache[userId] = token
             logger.debug("Access token refreshed and cached for user: $userId")
             return token
+        } catch (e: GmailRefreshTokenException) {
+            logger.error("Gmail refresh token is invalid or expired for user: $userId. User needs to reconnect.", e)
+            // Don't wrap it, let it propagate so the controller can catch it
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to get access token: ${e.message}", e)
             throw e

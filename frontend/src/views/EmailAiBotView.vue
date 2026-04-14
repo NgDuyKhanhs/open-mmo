@@ -583,20 +583,20 @@
                  </div>
               </div>
 
-                <!-- Pagination Controls -->
-                <div v-if="emails.length > 0" class="pagination-controls">
-                  <button
-                    @click="loadPreviousPage"
-                    class="pagination-btn pagination-btn-prev"
-                    :disabled="isLoading || currentPageIndex <= 0"
-                    title="Previous page"
-                  >
-                    ← Previous
-                  </button>
-                  <div class="pagination-spacer"></div>
-                  <button
-                    @click="loadNextPage"
-                    class="pagination-btn pagination-btn-next"
+                 <!-- Pagination Controls -->
+                 <div v-if="currentPageIndex > 0 || hasNextPage" class="pagination-controls">
+                   <button
+                     @click="loadPreviousPage"
+                     class="pagination-btn pagination-btn-prev"
+                     :disabled="isLoading || currentPageIndex <= 0"
+                     title="Previous page"
+                   >
+                     ← Previous
+                   </button>
+                   <div class="pagination-spacer"></div>
+                   <button
+                     @click="loadNextPage"
+                     class="pagination-btn pagination-btn-next"
                     :disabled="isLoading || !hasNextPage"
                     title="Next page"
                   >
