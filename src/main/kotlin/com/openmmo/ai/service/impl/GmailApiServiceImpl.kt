@@ -9,6 +9,7 @@ import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailOAuthService
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.repository.GmailProcessedMessageRepository
+import com.openmmo.ai.repository.CorrespondentMemoryRepository
 import com.openmmo.ai.entity.GmailProcessedMessage
 import com.openmmo.ai.exception.GmailRefreshTokenException
 import org.slf4j.LoggerFactory
@@ -44,6 +45,7 @@ class GmailApiServiceImpl(
     private val connectionRepository: GmailConnectionRepository,
     private val botConfigRepository: GmailBotConfigRepository,
     private val gmailProcessedMessageRepository: GmailProcessedMessageRepository,
+    private val correspondentMemoryRepository: CorrespondentMemoryRepository,
     private val oauthService: IGmailOAuthService,
     private val groqApiClient: GroqApiClient,
     private val gmailApiClient: GmailApiClient,
@@ -62,14 +64,14 @@ class GmailApiServiceImpl(
             tokenCache.set(mutableMapOf())
         }
     }    /**
-     * Get mailbox with pagination support (5 emails per page)
+     * Get mailbox with pagination support (10 emails per page)
      * FEATURES:
      * - Applies subject filter from BotConfig to Gmail API query
      * - Fetches 2x pageSize to ensure we return requested amount
      * - Auto-paginates if current page doesn't have enough matches
      * - FIXED: Retries with fresh token on 401 Unauthorized error
      */
-    fun getMailboxPage(userId: String, boxType: String, pageSize: Int = 5, pageToken: String? = null): MailboxPageResponse {
+    fun getMailboxPage(userId: String, boxType: String, pageSize: Int = 10, pageToken: String? = null): MailboxPageResponse {
         try {
             val startTime = System.currentTimeMillis()
             logger.info("Getting mailbox page for user: $userId, box=$boxType, pageSize=$pageSize, pageToken=$pageToken")
@@ -639,6 +641,22 @@ $encodedBody
         } catch (e: Exception) {
             logger.warn("Failed to save processed message record (non-fatal): ${e.message}")
             // Non-fatal error - don't throw, just log
+        }
+    }
+
+    override fun getContactsList(userId: String): List<String> {
+        return try {
+            logger.debug("Getting contacts list for user: {}", userId)
+
+            // Get all correspondent emails from correspondent_memory table
+            val correspondents = correspondentMemoryRepository.findByUserId(userId)
+            val contacts = correspondents.map { it.correspondentEmail }.distinct().sorted()
+
+            logger.debug("Found {} unique contacts for user: {}", contacts.size, userId)
+            contacts
+        } catch (e: Exception) {
+            logger.error("Error getting contacts list: {}", e.message, e)
+            emptyList()
         }
     }
 }

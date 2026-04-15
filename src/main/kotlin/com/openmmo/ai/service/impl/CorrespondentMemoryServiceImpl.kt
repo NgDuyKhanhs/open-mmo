@@ -250,7 +250,16 @@ Return ONLY valid JSON, no other text.
         }
 
         return try {
-            objectMapper.readValue(responseText, MemoryUpdateResponse::class.java)
+            // Strip markdown backticks if present (Groq sometimes returns markdown format)
+            val cleanedResponse = responseText
+                .trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+            logger.debug("Parsing memory update response (${cleanedResponse.length} chars)")
+            objectMapper.readValue(cleanedResponse, MemoryUpdateResponse::class.java)
         } catch (e: Exception) {
             logger.warn("Failed to parse $aiProvider response as JSON: ${e.message}, response=$responseText")
             MemoryUpdateResponse()

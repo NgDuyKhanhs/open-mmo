@@ -27,6 +27,7 @@ interface IGmailApiService {
     fun generateAiReplyWithMemory(userId: String, messageId: String, memoryContext: String): String  // With memory context
     fun modifyLabels(userId: String, messageId: String, addLabels: List<String>, removeLabels: List<String>)
     fun ensureLabel(userId: String, labelName: String): String
+    fun getContactsList(userId: String): List<String>  // Get list of unique contact emails
 }
 
 /**

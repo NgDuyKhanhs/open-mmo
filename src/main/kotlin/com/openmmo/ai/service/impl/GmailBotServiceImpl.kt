@@ -69,24 +69,24 @@ class GmailBotServiceImpl(
     override fun updateConfig(userId: String, triggerSubject: String): Map<String, String> {
         logger.info("Updating Gmail bot config for user: $userId")
 
-        // Validate triggerSubject not empty
-        if (triggerSubject.isBlank()) {
-            logger.warn("Invalid updateConfig request: triggerSubject is empty for user: $userId")
-            return mapOf(
-                "status" to "error",
-                "message" to "Trigger subject cannot be empty"
-            )
+        // triggerSubject is now optional - can be empty to reply to ALL emails
+        // If blank, will use skip rules (13 rules) to filter spam/promotional/system emails
+        val trimmedSubject = triggerSubject.trim().lowercase()
+        if (trimmedSubject.isBlank()) {
+            logger.warn("⚠️ triggerSubject is blank for user: $userId - bot will reply to ALL emails (with skip rules for safety)")
+        } else {
+            logger.debug("triggerSubject set to: $trimmedSubject for user: $userId")
         }
 
         val config = botConfigRepository.findByUserId(userId)
             ?: GmailBotConfig(userId = userId)
 
-        botConfigRepository.save(config.copy(triggerSubject = triggerSubject.trim().lowercase()))
-        logger.debug("Gmail bot config updated for user: $userId with triggerSubject: $triggerSubject")
+        botConfigRepository.save(config.copy(triggerSubject = trimmedSubject))
+        logger.debug("Gmail bot config updated for user: $userId")
 
         return mapOf(
             "status" to "success",
-            "message" to "Config updated"
+            "message" to "Config updated" + if (trimmedSubject.isBlank()) " (will reply to ALL emails)" else ""
         )
     }
 

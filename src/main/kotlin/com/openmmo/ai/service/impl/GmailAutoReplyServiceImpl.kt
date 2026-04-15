@@ -110,8 +110,14 @@ class GmailAutoReplyServiceImpl(
             val triggerSubject = config.triggerSubject
             logger.debug("Bot trigger subject: $triggerSubject for user: $userId")
 
-            // 3. Get unreplied emails matching trigger subject
-            val query = "subject:${triggerSubject.lowercase()} -label:$AI_BOT_REPLY_LABEL is:unread"
+            // 3. Get unreplied emails (with optional trigger subject filter)
+            // If triggerSubject is empty/blank, reply to ALL emails (with skip rules as safety net)
+            val query = if (triggerSubject.isNotBlank()) {
+                "subject:${triggerSubject.lowercase()} -label:$AI_BOT_REPLY_LABEL is:unread"
+            } else {
+                logger.warn("⚠️ triggerSubject is blank - will reply to ALL emails (using skip rules for safety)")
+                "-label:$AI_BOT_REPLY_LABEL is:unread"
+            }
             val messageIds = gmailApiService.searchMessages(userId, query, maxResults = 10)
             logger.info("Found ${messageIds.size} unreplied emails matching trigger for user: $userId")
 
@@ -136,12 +142,15 @@ class GmailAutoReplyServiceImpl(
                     val meta = gmailApiService.getMessageMeta(userId, messageId)
                     val threadId = meta["threadId"] as? String ?: messageId
 
-                    if (emailFrom.isNotEmpty() && emailSubject.isNotEmpty()) {
+                    if (emailFrom.isNotEmpty()) {
+                        // Allow empty subject - use "No Subject" as fallback
+                        val finalSubject = emailSubject.ifEmpty { "(No Subject)" }
+
                         // Get full headers for skip checks
                         val headers = gmailApiService.getMessageHeaders(userId, messageId)
 
                         // Check skip rules
-                        if (shouldSkipEmail(emailFrom, emailSubject, emailContent, headers, userId)) {
+                        if (shouldSkipEmail(emailFrom, finalSubject, emailContent, headers, userId)) {
                             logger.info("Skipping email $messageId for user $userId due to skip rules")
                         } else {
                             // Load memory for this correspondent
@@ -362,6 +371,7 @@ class GmailAutoReplyServiceImpl(
 
     /**
      * Check if email should be skipped based on multiple rules
+     * NEW Rules 8-13 added to save quota when triggerSubject is blank
      */
     private fun shouldSkipEmail(
         emailFrom: String,
@@ -433,6 +443,66 @@ class GmailAutoReplyServiceImpl(
         val userEmail = headersLower["to"]?.lowercase() ?: ""
         if (emailFrom.lowercase() == userEmail.lowercase()) {
             logger.info("Skip rule 7: Email from self")
+            return true
+        }
+
+        // ═══ NEW RULES (8-13) to save quota when triggerSubject is blank ═══
+
+        // Rule 8: Email has attachments (skip - might be binary/large)
+        val hasAttachments = headersLower.containsKey("x-has-attachments") ||
+                            headersLower["x-has-attachments"]?.lowercase() == "yes" ||
+                            contentLower.contains("content-disposition: attachment")
+        if (hasAttachments) {
+            logger.info("Skip rule 8: Email has attachments")
+            return true
+        }
+
+        // Rule 9: Email is extremely short (only 1-2 chars - likely accidental)
+        // "xin chào" (5 chars) should be accepted
+        if (emailBody.trim().length < 3) {
+            logger.info("Skip rule 9: Email extremely short (${emailBody.trim().length} chars)")
+            return true
+        }
+
+        // Rule 10: Email is mostly quoted/forwarded text (forwarded message with minimal new content)
+        val quoteMarkers = contentLower.count { it == '>' } // "> " is quote marker
+        val bodyLength = emailBody.trim().length
+        if (quoteMarkers > 5 && (quoteMarkers.toDouble() / bodyLength.coerceAtLeast(1)) > 0.1) {
+            logger.info("Skip rule 10: Email is mostly quoted/forwarded")
+            return true
+        }
+
+        // Rule 11: Email only contains HTML/formatted content (typically promotional)
+        val isHtmlOnly = headersLower["content-type"]?.contains("text/html") == true &&
+                        !contentLower.contains("text/plain") &&
+                        contentLower.contains("<html") || contentLower.contains("<body")
+        if (isHtmlOnly) {
+            logger.info("Skip rule 11: Email is HTML-only (likely promotional)")
+            return true
+        }
+
+        // Rule 12: Email from common system/automation services
+        val systemDomains = listOf(
+            "noreply@github.com",
+            "notifications@github.com",
+            "noreply@gitlab.com",
+            "notifications@bitbucket.org",
+            "noreply@linkedin.com",
+            "noreply@twitter.com",
+            "noreply@facebook.com",
+            "alerts@",
+            "notification@",
+            "system@"
+        )
+        if (systemDomains.any { emailFrom.lowercase().contains(it) }) {
+            logger.info("Skip rule 12: Email from system/automation service")
+            return true
+        }
+
+        // Rule 13: Email has very high HTML:text ratio (promotional/marketing)
+        val htmlCount = contentLower.count { it == '<' }
+        if (htmlCount > (bodyLength / 50).coerceAtLeast(5)) {
+            logger.info("Skip rule 13: Email has high HTML:text ratio (marketing)")
             return true
         }
 

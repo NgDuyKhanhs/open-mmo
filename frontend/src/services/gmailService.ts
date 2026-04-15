@@ -340,3 +340,130 @@ export function formatDateTime(dateStr: string): string {
   }
 }
 
+// ============================================
+// CONTACTS
+// ============================================
+
+/**
+ * Get list of contact emails
+ * @param token - User's JWT access token
+ * @returns List of unique contact emails extracted from mailbox
+ */
+export async function getContactsList(token: string): Promise<string[]> {
+  const freshToken = await ensureTokenFresh(token)
+  const response = await fetch(`${API_BASE_URL}/contacts`, {
+    method: 'GET',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+  })
+  const data = await handleResponse<{ contacts: string[] }>(response)
+  return data.contacts || []
+}
+
+// ============================================
+// REMINDERS
+// ============================================
+
+export interface ReminderConfig {
+  contactEmail: string
+  enabled: boolean
+  afterInactive: number
+  repeatEvery?: number | null
+  maxReminders: number
+  sendWindowStart: string
+  sendWindowEnd: string
+}
+
+export interface ReminderResponse {
+  contactEmail: string
+  enabled: boolean
+  afterInactive: number
+  repeatEvery?: number | null
+  maxReminders: number
+  sendWindowStart: string
+  sendWindowEnd: string
+  sentCount: number
+  lastSentAt?: string | null
+}
+
+/**
+ * Get all reminders for current user
+ * @param token - User's JWT access token
+ * @returns List of reminder configurations
+ */
+export async function getReminders(token: string): Promise<ReminderResponse[]> {
+  const freshToken = await ensureTokenFresh(token)
+  const response = await fetch(`${API_BASE_URL}/reminders`, {
+    method: 'GET',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+  })
+  const data = await handleResponse<{ reminders: ReminderResponse[] }>(response)
+  return data.reminders || []
+}
+
+/**
+ * Create a new reminder
+ * @param token - User's JWT access token
+ * @param reminder - Reminder configuration
+ * @returns Success response
+ */
+export async function createReminder(
+  token: string,
+  reminder: ReminderConfig
+): Promise<{ status: string; message: string }> {
+  const freshToken = await ensureTokenFresh(token)
+  const response = await fetch(`${API_BASE_URL}/reminders`, {
+    method: 'POST',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+    body: JSON.stringify(reminder),
+  })
+  return handleResponse(response)
+}
+
+/**
+ * Update existing reminder
+ * @param token - User's JWT access token
+ * @param contactEmail - Contact email to update (empty string for "All Contacts")
+ * @param reminder - Updated reminder configuration
+ * @returns Success response
+ */
+export async function updateReminder(
+  token: string,
+  contactEmail: string,
+  reminder: ReminderConfig
+): Promise<{ status: string; message: string }> {
+  const freshToken = await ensureTokenFresh(token)
+  // Handle "All Contacts" case (empty string) - use special identifier
+  const emailParam = contactEmail === '' ? 'all' : encodeURIComponent(contactEmail)
+  const response = await fetch(`${API_BASE_URL}/reminders/${emailParam}`, {
+    method: 'PUT',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+    body: JSON.stringify(reminder),
+  })
+  return handleResponse(response)
+}
+
+/**
+ * Delete a reminder
+ * @param token - User's JWT access token
+ * @param contactEmail - Contact email to delete (empty string for "All Contacts")
+ * @returns Success response
+ */
+export async function deleteReminder(
+  token: string,
+  contactEmail: string
+): Promise<{ status: string; message: string }> {
+  const freshToken = await ensureTokenFresh(token)
+  // Handle "All Contacts" case (empty string) - use special identifier
+  const emailParam = contactEmail === '' ? 'all' : encodeURIComponent(contactEmail)
+  const response = await fetch(`${API_BASE_URL}/reminders/${emailParam}`, {
+    method: 'DELETE',
+    headers: getHeaders(freshToken),
+    credentials: 'include',
+  })
+  return handleResponse(response)
+}
+

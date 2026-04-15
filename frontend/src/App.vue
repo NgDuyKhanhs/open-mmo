@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
+  import { ref, onMounted, computed } from 'vue'
   import { useRouter } from 'vue-router'
   import Navbar from './components/Navbar.vue'
   import LoadingScreen from './components/LoadingScreen.vue'
@@ -18,6 +18,11 @@
   const backToHome = () => {
     router.push('/')
   }
+
+  // Check if current route is EmailAiBotView for full-width layout
+  const isEmailAiBotView = computed(() => {
+    return router.currentRoute.value.path === '/email-ai-bot'
+  })
 </script>
 
 <template>
@@ -33,11 +38,11 @@
       <!-- Navbar (Always Visible) -->
       <Navbar />
 
-      <!-- Content -->
-      <div class="container">
-        <router-view :key="$route.path" :on-back="backToHome" />
-        <Footer />
-      </div>
+       <!-- Content -->
+       <div class="container" :class="{ 'container-fullwidth': isEmailAiBotView }">
+         <router-view :key="$route.path" :on-back="backToHome" />
+         <Footer v-if="!isEmailAiBotView" />
+       </div>
     </div>
   </div>
 </template>
@@ -68,9 +73,13 @@
     flex-direction: column;
   }
 
+  /* Full-width layout for EmailAiBotView */
+  .container.container-fullwidth {
+    max-width: 100%;
+    padding: 0;
+  }
+
   @media (max-width: 768px) {
-    .container {
-      padding: 120px 15px 20px;
-    }
+
   }
 </style>

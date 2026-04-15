@@ -1,10 +1,10 @@
-<script setup lang="ts">
+  <script setup lang="ts">
   import { useRouter } from 'vue-router'
   import { useAuthStore } from '@/stores/useAuthStore'
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
   import { toast } from 'vue3-toastify'
   import navbarLogoUrl from '@/assets/navbar-logo.png'
-  import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon, Send, AlertOctagon, Zap, Gauge } from 'lucide-vue-next'
+   import { Mail, Settings, RefreshCw, HelpCircle, X, Search, Inbox, CheckCircle2, AlertCircle, Bot, Key, Clock, AlertTriangle, LinkIcon, Send, AlertOctagon, Zap, Gauge, Trash, Edit } from 'lucide-vue-next'
   import {
     getGmailStatus,
     startGmailConnection,
@@ -15,9 +15,16 @@
     getMailboxPage,
     getAiProvider,
     setAiProvider,
+    getContactsList,
+    getReminders,
+    createReminder,
+    updateReminder,
+    deleteReminder,
     type GmailStatus,
     type Email,
     type MailboxPageResponse,
+    type ReminderConfig,
+    type ReminderResponse,
   } from '@/services/gmailService'
 
   const router = useRouter()
@@ -65,23 +72,66 @@
    const selectedBox = ref<'inbox' | 'sent' | 'spam' | 'trash'>('inbox')
    const selectedEmail = ref<Email | null>(null)
    const isLoading = ref(false)
-   const isSaving = ref(false)
-   const showModal = ref(false)
-    const configSubject = ref('')
-    const configPrompt = ref('')
-    const showPromptHelp = ref(false)
-    const activeTab = ref<'mailbox' | 'config' | 'status' | 'connection'>('mailbox')
-    const selectedAiProvider = ref<'gemini' | 'groq'>('groq')
+    const isSaving = ref(false)
+    const showModal = ref(false)
+      const configSubject = ref('')
+      const configPrompt = ref('')
+      const showPromptHelp = ref(false)
+      const activeTab = ref<'mailbox' | 'config' | 'status' | 'reminders' | 'connection'>('mailbox')
+      const selectedAiProvider = ref<'gemini' | 'groq'>('groq')
 
-   // 🆕 Pagination state
-   const currentPageToken = ref<string | null>(null)
-   interface PageCache {
-     emails: Email[]
-     nextPageToken: string | null
-   }
-   const pageCache = ref<PageCache[]>([]) // Cache pages: [page1, page2, page3...]
-   const currentPageIndex = ref(0)
-   const hasNextPage = ref(false)
+      // Track original config values to detect changes
+      const originalConfigSubject = ref('')
+      const originalConfigPrompt = ref('')
+
+      // Navbar toggle state
+      const navbarExpanded = ref(true)
+
+      // 🆕 Reminder Configuration State
+      interface ReminderConfig {
+        contactEmail: string
+        enabled: boolean
+        afterInactive: number // minutes
+        maxReminders: number
+      }
+
+        const reminders = ref<ReminderConfig[]>([])
+        const contactsList = ref<string[]>([])  // List of contact emails
+        const isLoadingContacts = ref(false)
+        const newReminder = ref<ReminderConfig>({
+          contactEmail: '',
+          enabled: true,
+          afterInactive: 60,
+          maxReminders: 5,
+        })
+       const editingReminderId = ref<string | null>(null)
+       const isSavingReminder = ref(false)
+       const showReminderForm = ref(false)
+
+       // 🆕 Delete confirmation popup state
+       const showDeleteConfirm = ref(false)
+       const deleteConfirmEmail = ref<string>('')
+
+        // 🆕 Optional fields visibility
+         const visibleOptionalFields = ref<{
+           contactEmail: boolean
+           maxReminders: boolean
+           enabled: boolean
+         }>({
+           contactEmail: false,  // Default checked để user thấy là for specific contact
+           maxReminders: false,
+           enabled: false,
+         })
+
+      // 🆕 Pagination state
+    const currentPageToken = ref<string | null>(null)
+    interface PageCache {
+      emails: Email[]
+      nextPageToken: string | null
+    }
+    const pageCache = ref<PageCache[]>([]) // Cache pages: [page1, page2, page3...]
+    const currentPageIndex = ref(0)
+    const hasNextPage = ref(false)
 
   // Load custom prompt when switching to config tab
   const switchToConfigTab = async () => {
@@ -89,25 +139,27 @@
     await loadCustomPrompt()
   }
 
-  const loadCustomPrompt = async () => {
-    try {
-      if (!authStore.accessToken) return
-      const { API_CONFIG } = await import('@/config/apiConfig')
-      const response = await fetch(API_CONFIG.GMAIL.BOT_PROMPT, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authStore.accessToken}`,
-        },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        if (data.customPrompt) configPrompt.value = data.customPrompt
-      }
-    } catch (err) {
-      console.error('Failed to load custom prompt:', err)
-    }
-  }
+   const loadCustomPrompt = async () => {
+     try {
+       if (!authStore.accessToken) return
+       const { API_CONFIG } = await import('@/config/apiConfig')
+       const response = await fetch(API_CONFIG.GMAIL.BOT_PROMPT, {
+         method: 'GET',
+         headers: {
+           'Content-Type': 'application/json',
+           'Authorization': `Bearer ${authStore.accessToken}`,
+         },
+       })
+       if (response.ok) {
+         const data = await response.json()
+         if (data.customPrompt) configPrompt.value = data.customPrompt
+         // Track original prompt value
+         originalConfigPrompt.value = data.customPrompt || ''
+       }
+     } catch (err) {
+       console.error('Failed to load custom prompt:', err)
+     }
+   }
 
   // Format date utility
   const formatDate = (dateString: string) => {
@@ -131,11 +183,13 @@
 
        status.value = await getGmailStatus(authStore.accessToken)
        configSubject.value = status.value.triggerSubject
-    } catch (err) {
-      console.error('Failed to load status:', err)
-      toast.error(err instanceof Error ? err.message : 'Failed to load status')
-    }
-  }
+       // Track original values to detect changes
+       originalConfigSubject.value = status.value.triggerSubject
+     } catch (err) {
+       console.error('Failed to load status:', err)
+       toast.error(err instanceof Error ? err.message : 'Failed to load status')
+     }
+   }
 
     // Load emails from selected mailbox with pagination
     const loadEmails = async () => {
@@ -147,11 +201,11 @@
           return
         }
 
-        // Use pagination API (5 emails per page)
+        // Use pagination API (10 emails per page)
         const response = await getMailboxPage(
           authStore.accessToken,
           selectedBox.value.toLowerCase(),
-          5,
+          10,
           undefined // Always start from first page (no token)
         )
 
@@ -176,7 +230,7 @@
               const response = await getMailboxPage(
                 authStore.accessToken,
                 selectedBox.value.toLowerCase(),
-                5,
+                10,
                 undefined
               )
               emails.value = response.emails
@@ -230,7 +284,7 @@
         const response = await getMailboxPage(
           authStore.accessToken,
           selectedBox.value.toLowerCase(),
-          5,
+          10,
           currentPageToken.value || undefined
         )
 
@@ -305,6 +359,14 @@
        }
 
        await loadStatus()
+       // Reload emails to reflect new triggerSubject filter immediately
+       // This ensures emails list updates when switching from config tab to mail tab
+       await loadEmails()
+
+       // Reset original values to disable Save button
+       originalConfigSubject.value = configSubject.value
+       originalConfigPrompt.value = configPrompt.value
+
        toast.success('Configuration saved')
      } catch (err) {
        console.error('Failed to update config:', err)
@@ -314,44 +376,241 @@
      }
    }
 
-    // Change AI provider
-    const changeAiProvider = async (provider: 'gemini' | 'groq') => {
-      try {
-        selectedAiProvider.value = provider
+     // Change AI provider
+     const changeAiProvider = async (provider: 'gemini' | 'groq') => {
+       try {
+         selectedAiProvider.value = provider
 
-        // Save to localStorage for persistence
-        localStorage.setItem('selectedAiProvider', provider)
+         // Save to localStorage for persistence
+         localStorage.setItem('selectedAiProvider', provider)
 
-        // Send to backend
-        if (authStore.accessToken) {
-          await setAiProvider(authStore.accessToken, provider)
-          console.log(`✅ Switched AI provider to ${provider} and saved to backend`)
+         // Send to backend
+         if (authStore.accessToken) {
+           await setAiProvider(authStore.accessToken, provider)
+           console.log(`✅ Switched AI provider to ${provider} and saved to backend`)
+         }
+
+         toast.success(`Switched to ${provider === 'gemini' ? 'Gemini' : 'Groq'} AI provider`)
+       } catch (err) {
+         console.error('Failed to change AI provider:', err)
+         toast.error(err instanceof Error ? err.message : 'Error changing AI provider')
+       }
+     }
+
+       // 🆕 Load reminders for current user
+       const loadReminders = async () => {
+         try {
+           if (!authStore.accessToken) return
+           const remindersList = await getReminders(authStore.accessToken)
+           reminders.value = remindersList || []
+         } catch (err) {
+           console.error('Failed to load reminders:', err)
+           toast.error('Failed to load reminders')
+         }
+       }
+
+       // 🆕 Load contacts list
+       const loadContacts = async () => {
+         try {
+           if (!authStore.accessToken) return
+           isLoadingContacts.value = true
+           const contacts = await getContactsList(authStore.accessToken)
+           contactsList.value = contacts || []
+         } catch (err) {
+           console.error('Failed to load contacts:', err)
+           toast.error('Failed to load contacts')
+         } finally {
+           isLoadingContacts.value = false
+         }
+       }
+
+         // 🆕 Save or update reminder
+           const saveReminder = async () => {
+           // Validation: afterInactive is always required
+           if (!newReminder.value.afterInactive || newReminder.value.afterInactive < 5) {
+             toast.error('Remind after inactivity must be at least 5 minutes')
+             return
+           }
+
+           // Validation: maxReminders must be set if checkbox is checked
+           if (visibleOptionalFields.value.maxReminders && (!newReminder.value.maxReminders || newReminder.value.maxReminders < 1)) {
+             toast.error('Max reminders must be at least 1')
+             return
+           }
+
+           // Validation: if contactEmail field is visible, it must not be empty
+           if (visibleOptionalFields.value.contactEmail && !newReminder.value.contactEmail.trim()) {
+             toast.error('Please enter a contact email or uncheck "Apply to Specific Contact"')
+             return
+           }
+
+          isSavingReminder.value = true
+          try {
+            if (!authStore.accessToken) return
+
+              // Build reminder object - send exactly what user configured
+              const reminderData: ReminderConfig = {
+                 contactEmail: visibleOptionalFields.value.contactEmail ? newReminder.value.contactEmail : '',
+                 enabled: visibleOptionalFields.value.enabled ? newReminder.value.enabled : true,
+                 afterInactive: newReminder.value.afterInactive,
+                 maxReminders: visibleOptionalFields.value.maxReminders ? newReminder.value.maxReminders : 5,
+               }
+
+           if (editingReminderId.value) {
+             // Update existing - use original contactEmail as the path parameter
+             const result = await updateReminder(authStore.accessToken, editingReminderId.value, reminderData)
+             if (result.status === 'success') {
+               toast.success(result.message)
+               await loadReminders()
+               resetReminderForm()
+             } else {
+               toast.error(result.message || 'Failed to update reminder')
+             }
+           } else {
+             // Create new
+             const result = await createReminder(authStore.accessToken, reminderData)
+             if (result.status === 'success') {
+               toast.success(result.message)
+               await loadReminders()
+               resetReminderForm()
+             } else {
+               toast.error(result.message || 'Failed to create reminder')
+             }
+           }
+         } catch (err) {
+           console.error('Failed to save reminder:', err)
+           toast.error(err instanceof Error ? err.message : 'Error saving reminder')
+         } finally {
+           isSavingReminder.value = false
+         }
+       }
+
+       // 🆕 Delete reminder - show popup
+       const showDeleteConfirmPopup = (contactEmail: string) => {
+         deleteConfirmEmail.value = contactEmail
+         showDeleteConfirm.value = true
+       }
+
+       // 🆕 Confirm delete
+       const confirmDelete = async () => {
+         const contactEmail = deleteConfirmEmail.value
+         showDeleteConfirm.value = false
+
+         try {
+           if (!authStore.accessToken) return
+
+           const result = await deleteReminder(authStore.accessToken, contactEmail)
+           if (result.status === 'success') {
+             toast.success(result.message)
+             await loadReminders()
+           } else {
+             toast.error(result.message || 'Failed to delete reminder')
+           }
+         } catch (err) {
+           console.error('Failed to delete reminder:', err)
+           toast.error(err instanceof Error ? err.message : 'Error deleting reminder')
+         }
+       }
+
+       // 🆕 Cancel delete
+       const cancelDelete = () => {
+         showDeleteConfirm.value = false
+         deleteConfirmEmail.value = ''
+       }
+
+        // 🆕 Edit reminder
+        const editReminder = async (reminder: ReminderConfig) => {
+          showReminderForm.value = true
+
+          // Ensure the selected contact can be rendered in the dropdown when editing
+          if (reminder.contactEmail) {
+            if (contactsList.value.length === 0) {
+              await loadContacts()
+            }
+
+            if (!contactsList.value.includes(reminder.contactEmail)) {
+              contactsList.value = [reminder.contactEmail, ...contactsList.value]
+            }
+          }
+
+           newReminder.value = {
+             contactEmail: reminder.contactEmail || '',
+              enabled: reminder.enabled,
+              afterInactive: reminder.afterInactive,
+              maxReminders: reminder.maxReminders,
+            }
+
+            editingReminderId.value = reminder.contactEmail
+
+            // Update optional fields visibility based on reminder data
+            visibleOptionalFields.value = {
+              contactEmail: reminder.contactEmail.trim().length > 0, // Show if has specific contact
+              maxReminders: reminder.maxReminders !== null && reminder.maxReminders !== undefined,
+              enabled: reminder.enabled !== null && reminder.enabled !== undefined,
+            }
         }
 
-        toast.success(`Switched to ${provider === 'gemini' ? 'Gemini' : 'Groq'} AI provider`)
-      } catch (err) {
-        console.error('Failed to change AI provider:', err)
-        toast.error(err instanceof Error ? err.message : 'Error changing AI provider')
-      }
-    }
+       // 🆕 Reset reminder form
+        const resetReminderForm = () => {
+          newReminder.value = {
+            contactEmail: '',
+            enabled: true,
+            afterInactive: 60,
+            maxReminders: 5,
+          }
+          editingReminderId.value = null
+          showReminderForm.value = false
+          // Reset optional fields visibility
+          visibleOptionalFields.value = {
+            contactEmail: false,
+            maxReminders: false,
+            enabled: false,
+          }
+       }
 
-   // Select mailbox and load emails
-   const selectBox = async (box: typeof selectedBox.value) => {
-     // Prevent switching if emails are loading
-     if (isLoading.value) {
-       toast.warning('⏳ Please wait for emails to finish loading')
-       return
+     // 🆕 Toggle reminder form
+     const toggleReminderForm = () => {
+       if (showReminderForm.value) {
+         // Closing form
+         resetReminderForm()
+       } else {
+         // Opening form - load contacts list
+         resetReminderForm()
+         loadContacts()
+         showReminderForm.value = true
+       }
      }
-     selectedBox.value = box
-     selectedEmail.value = null
-     await loadEmails()
-   }
 
-   // Select email and show preview
-   const selectEmail = (email: Email) => {
-     selectedEmail.value = email
-     showModal.value = true
-   }
+     // Select mailbox and load emails
+     const selectBox = async (box: typeof selectedBox.value) => {
+       // Prevent switching if emails are loading
+       if (isLoading.value) {
+         toast.warning('⏳ Please wait for emails to finish loading')
+         return
+       }
+       selectedBox.value = box
+       selectedEmail.value = null
+       await loadEmails()
+     }
+
+      // Watch for changes in contactEmail visibility to load contacts
+      watch(
+        () => visibleOptionalFields.value.contactEmail,
+        async (isVisible) => {
+          if (isVisible) {
+            // Always load contacts when checkbox is checked, or if list is empty
+            if (contactsList.value.length === 0 && !isLoadingContacts.value) {
+              await loadContacts()
+            }
+          }
+        }
+      )
+
+    // Select email and show preview
+    const selectEmail = (email: Email) => {
+      selectedEmail.value = email
+      showModal.value = true
+    }
 
   // Close modal
   const closeModal = () => {
@@ -418,6 +677,13 @@
     return emails.value.filter(email => email.subject.toLowerCase().includes(keyword))
   })
 
+  // Check if config has changed (to enable/disable Save button)
+  const hasConfigChanged = computed(() => {
+    const subjectChanged = configSubject.value !== originalConfigSubject.value
+    const promptChanged = configPrompt.value !== originalConfigPrompt.value
+    return subjectChanged || promptChanged
+  })
+
   // Extract email address from "Name <email@domain.com>" format
   const extractEmail = (emailString: string): string => {
     if (!emailString) return ''
@@ -480,39 +746,70 @@
         <!-- Main Content Area -->
         <main v-if="status.connected" class="main-content">
                <!-- Tab Navigation -->
-               <div class="tab-header">
-                  <button
-                    @click="activeTab = 'mailbox'"
-                    :class="['tab-button', { active: activeTab === 'mailbox' }]"
-                  >
-                    <Mail :size="18" class="tab-icon" />
-                  </button>
-                   <button
-                     @click="switchToConfigTab"
-                     :class="['tab-button', { active: activeTab === 'config' }]"
-                   >
-                     <Settings :size="18" class="tab-icon" />
+               <div class="tab-header" :class="{ collapsed: !navbarExpanded }">
+                    <!-- Toggle Button -->
+                    <button
+                      @click="navbarExpanded = !navbarExpanded"
+                      class="navbar-toggle-btn"
+                      :title="navbarExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
+                    >
+                      <!-- Expand Icon -->
+                      <svg v-if="navbarExpanded" viewBox="0 0 24 24" class="toggle-icon" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                        <path d="M9 3v18" stroke-linecap="round"></path>
+                        <path d="M16 10l-3 2 3 2" stroke-linecap="round" stroke-linejoin="round"></path>
+                      </svg>
+                      <!-- Collapse Icon -->
+                      <svg v-else viewBox="0 0 24 24" class="toggle-icon" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                        <path d="M9 3v18" stroke-linecap="round"></path>
+                        <path d="M14 10l3 2-3 2" stroke-linecap="round" stroke-linejoin="round"></path>
+                      </svg>
+                    </button>
 
-                   </button>
                    <button
-                     @click="activeTab = 'status'"
-                     :class="['tab-button', { active: activeTab === 'status' }]"
+                     @click="activeTab = 'mailbox'"
+                     :class="['tab-button', { active: activeTab === 'mailbox' }]"
+                     title="View mailbox"
                    >
-                     <Bot :size="18" class="tab-icon" />
+                     <Mail :size="18" class="tab-icon" />
+                     <span v-if="navbarExpanded" class="tab-label">Mailbox</span>
                    </button>
-                   <button
-                     @click="activeTab = 'connection'"
-                     :class="['tab-button', { active: activeTab === 'connection' }]"
-                   >
-                     <LinkIcon :size="18" class="tab-icon" />
-                   </button>
-               </div>
+                    <button
+                      @click="switchToConfigTab"
+                      :class="['tab-button', { active: activeTab === 'config' }]"
+                      title="Bot settings"
+                    >
+                      <Settings :size="18" class="tab-icon" />
+                      <span v-if="navbarExpanded" class="tab-label">Config</span>
+                    </button>
+                     <button
+                       @click="activeTab = 'status'"
+                       :class="['tab-button', { active: activeTab === 'status' }]"
+                       title="Bot status"
+                     >
+                       <Bot :size="18" class="tab-icon" />
+                       <span v-if="navbarExpanded" class="tab-label">Status</span>
+                     </button>
+                     <button
+                       @click="activeTab = 'reminders'; loadReminders()"
+                       :class="['tab-button', { active: activeTab === 'reminders' }]"
+                       title="Email reminders"
+                     >
+                       <Clock :size="18" class="tab-icon" />
+                       <span v-if="navbarExpanded" class="tab-label">Reminders</span>
+                     </button>
+                  </div>
 
-           <!-- Tab Content -->
-           <div class="tab-content">
-             <!-- Mailbox Tab -->
-              <div v-show="activeTab === 'mailbox'" class="mailbox-section tab-pane">
-                 <div class="mailbox-header">
+            <!-- Tab Content -->
+            <div class="tab-content">
+              <!-- Mailbox Tab -->
+               <div v-show="activeTab === 'mailbox'" class="mailbox-section tab-pane">
+                  <div class="tab-title-section">
+                    <h3 class="tab-title">Mailbox</h3>
+                    <div class="tab-divider"></div>
+                  </div>
+                  <div class="mailbox-header">
                   <div class="mailbox-selector">
                     <button
                       @click="selectBox('inbox')"
@@ -549,79 +846,87 @@
                   </div>
                  </div>
 
-               <div class="email-list">
-                   <div v-if="isLoading" class="loading-state">
-                   <div class="spinner"></div>
-                   <span>Loading emails...</span>
-                 </div>
-                  <div v-else-if="emails.length === 0" class="empty-state">
-                    <Inbox :size="32" class="empty-icon" />
-                    <span>No emails in {{ selectedBox }}</span>
+                <div class="email-list">
+                    <div v-if="isLoading" class="loading-state">
+                      <div class="spinner"></div>
+                      <span>Loading emails...</span>
+                    </div>
+                    <div v-else-if="emails.length === 0" class="empty-state">
+                      <Inbox :size="32" class="empty-icon" />
+                      <span>No emails in {{ selectedBox }}</span>
+                    </div>
+                    <div v-else-if="filteredEmails.length === 0" class="empty-state">
+                      <Search :size="32" class="empty-icon" />
+                      <span>No emails matching "{{ status.triggerSubject }}"</span>
+                    </div>
+                    <div v-else class="email-items">
+                      <div
+                        v-for="email in filteredEmails"
+                        :key="email.id"
+                        @click="selectEmail(email)"
+                        class="email-item"
+                      >
+                        <div v-if="email.aiprovider" class="email-provider">
+                          {{ email.aiprovider.charAt(0).toUpperCase() + email.aiprovider.slice(1) }}
+                        </div>
+                        <div class="email-from">
+                          <Mail size="14" />
+                          {{ extractEmail(email.from) }}
+                        </div>
+                        <div class="email-subject">{{ email.subject }}</div>
+                        <div class="email-snippet">{{ email.snippet }}</div>
+                        <div class="email-date">{{ formatDate(email.date) }}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div v-else-if="filteredEmails.length === 0" class="empty-state">
-                    <Search :size="32" class="empty-icon" />
-                    <span>No emails matching "{{ status.triggerSubject }}"</span>
-                  </div>
-                <div v-else class="email-items">
-                   <div
-                     v-for="email in filteredEmails"
-                     :key="email.id"
-                     @click="selectEmail(email)"
-                     class="email-item"
-                   >
-                     <div v-if="email.aiprovider" class="email-provider">
-                       {{ email.aiprovider.charAt(0).toUpperCase() + email.aiprovider.slice(1) }}
-                     </div>
-                     <div class="email-from">
-                       <Mail size="14" />
-                       {{ extractEmail(email.from) }}
-                     </div>
-                     <div class="email-subject">{{ email.subject }}</div>
-                     <div class="email-snippet">{{ email.snippet }}</div>
-                     <div class="email-date">{{ formatDate(email.date) }}</div>
-                   </div>
-                 </div>
-              </div>
 
-                 <!-- Pagination Controls -->
-                 <div v-if="currentPageIndex > 0 || hasNextPage" class="pagination-controls">
-                   <button
-                     @click="loadPreviousPage"
-                     class="pagination-btn pagination-btn-prev"
-                     :disabled="isLoading || currentPageIndex <= 0"
-                     title="Previous page"
-                   >
-                     ← Previous
-                   </button>
-                   <div class="pagination-spacer"></div>
-                   <button
-                     @click="loadNextPage"
-                     class="pagination-btn pagination-btn-next"
-                    :disabled="isLoading || !hasNextPage"
-                    title="Next page"
-                  >
-                    Next →
-                  </button>
+                  <!-- Pagination Controls -->
+                  <div v-if="currentPageIndex > 0 || hasNextPage" class="pagination-controls">
+                    <button
+                      @click="loadPreviousPage"
+                      class="pagination-btn pagination-btn-prev"
+                      :disabled="isLoading || currentPageIndex <= 0"
+                      title="Previous page"
+                    >
+                      ← Previous
+                    </button>
+                    <div class="pagination-spacer"></div>
+                    <button
+                      @click="loadNextPage"
+                      class="pagination-btn pagination-btn-next"
+                      :disabled="isLoading || !hasNextPage"
+                      title="Next page"
+                    >
+                      Next →
+                    </button>
+                  </div>
                 </div>
-            </div>
 
-             <!-- Settings Tab -->
-             <div v-show="activeTab === 'config'" class="settings-section tab-pane">
-               <!-- Bot Status Overview -->
+              <!-- Settings Tab -->
+              <div v-show="activeTab === 'config'" class="settings-section tab-pane">
+                <!-- Tab Title -->
+                <div class="tab-title-section">
+                  <h3 class="tab-title">Configuration</h3>
+                  <div class="tab-divider"></div>
+                </div>
 
-              <div class="config-form">
+               <div class="config-form">
                 <!-- Trigger Subject -->
                 <div class="form-section">
-                  <label class="form-label">Subject Keyword</label>
+                  <label class="form-label">Subject Keyword <span class="optional-badge">(Optional)</span></label>
                   <p class="form-description">
-                    Bot will only respond to emails containing this keyword
+                    Leave empty to reply to ALL emails, or enter a keyword to filter by subject.
+                    <strong>NEW:</strong> Automatic rules will skip attachments, promotional emails, and system notifications to save quota.
                   </p>
                   <input
                     v-model="configSubject"
                     type="text"
-                    placeholder="e.g., youtube, shopify, contact"
+                    placeholder="e.g., youtube, shopify, contact (or leave empty for all emails)"
                     class="form-input"
                   />
+                  <div v-if="!configSubject.trim()" class="info-box">
+                    ⚠️ <strong>Reply to ALL mode:</strong> Bot will reply to all emails but skip auto-generated, mailing lists, promotional, and low-quality emails (13 skip rules).
+                  </div>
                 </div>
 
                 <div class="form-divider"></div>
@@ -649,7 +954,7 @@
                   <button
                     @click="updateConfig"
                     class="btn btn-primary btn-full"
-                    :disabled="isSaving || !configSubject.trim()"
+                    :disabled="isSaving || !hasConfigChanged"
                   >
                     {{ isSaving ? 'Saving...' : 'Save Configuration' }}
                   </button>
@@ -657,154 +962,281 @@
                </div>
              </div>
 
-               <!-- Status Tab - Bot Status Only -->
-               <div v-show="activeTab === 'status'" class="status-section tab-pane">
-                 <div class="status-content">
-                   <div class="status-header">
-                     <h3 class="status-section-title">Bot Status</h3>
-                     <p class="status-subtitle">View bot's current state and statistics</p>
+                 <!-- Status Tab - Bot Status & AI Provider -->
+                 <div v-show="activeTab === 'status'" class="status-section tab-pane">
+                   <!-- Tab Title -->
+                   <div class="tab-title-section">
+                     <h3 class="tab-title">Status & AI Model</h3>
+                     <div class="tab-divider"></div>
                    </div>
 
-                   <!-- Status Grid -->
-                   <div class="status-grid-modern">
-                     <!-- Bot Status -->
-                     <div v-if="status.connected" class="modern-card bot-card">
-                       <div class="card-header">
-                         <Bot :size="18" class="card-icon" />
-                         <span class="card-title">Bot Status</span>
-                       </div>
-                       <div class="card-content">
-                         <div class="bot-toggle-large">
-                           <label class="toggle-switch-large">
-                             <input
-                               type="checkbox"
-                               :checked="status.botEnabled"
-                               @change="toggleBot"
-                               :disabled="isSaving"
-                             />
-                             <span class="toggle-slider-large"></span>
-                           </label>
-                           <div class="toggle-info">
-                             <span :class="['status-badge-small', status.botEnabled ? 'active' : 'inactive']">
-                               {{ status.botEnabled ? '● Running' : '● Paused' }}
-                             </span>
-                             <span class="toggle-description">
-                               {{ status.botEnabled ? 'Auto-replies are enabled' : 'Auto-replies are paused' }}
-                             </span>
+                   <div class="status-content">
+
+                    <!-- Status Grid -->
+                    <div class="status-grid-modern">
+                      <!-- Bot Status -->
+                      <div v-if="status.connected" class="modern-card bot-card">
+                        <div class="card-header">
+                          <Bot :size="18" class="card-icon" />
+                          <span class="card-title">Bot Status</span>
+                        </div>
+                        <div class="card-content">
+                          <div class="bot-toggle-large">
+                            <label class="toggle-switch-large">
+                              <input
+                                type="checkbox"
+                                :checked="status.botEnabled"
+                                @change="toggleBot"
+                                :disabled="isSaving"
+                              />
+                              <span class="toggle-slider-large"></span>
+                            </label>
+                            <div class="toggle-info">
+                              <span :class="['status-badge-small', status.botEnabled ? 'active' : 'inactive']">
+                                {{ status.botEnabled ? '● Running' : '● Paused' }}
+                              </span>
+                              <span class="toggle-description">
+                                {{ status.botEnabled ? 'Auto-replies are enabled' : 'Auto-replies are paused' }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Last Run Info -->
+                      <div v-if="status.lastRunAt" class="modern-card run-card">
+                        <div class="card-header">
+                          <Clock :size="18" class="card-icon" />
+                          <span class="card-title">Last Run</span>
+                        </div>
+                        <div class="card-content">
+                          <p class="run-time">{{ formatDate(status.lastRunAt) }}</p>
+                          <p class="run-hint">Last time the bot processed emails</p>
+                        </div>
+                      </div>
+
+                      <!-- Error Info -->
+                      <div v-if="status.lastError" class="modern-card error-card">
+                        <div class="card-header error-header">
+                          <AlertTriangle :size="18" class="card-icon" />
+                          <span class="card-title">Last Error</span>
+                        </div>
+                        <div class="card-content">
+                          <p class="error-message">{{ status.lastError }}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- AI Provider Selection Section -->
+                    <div v-if="status.connected" class="ai-provider-section">
+                      <div class="provider-header">
+                        <h4 class="provider-title">AI Model Selection</h4>
+                        <p class="provider-description">Choose which AI model to use for auto-replies</p>
+                      </div>
+
+                      <div class="provider-grid">
+                        <!-- Groq Option -->
+                        <div
+                          @click="changeAiProvider('groq')"
+                          :class="['provider-card', { selected: selectedAiProvider === 'groq' }]"
+                        >
+                          <div class="provider-card-header">
+                            <Zap :size="24" class="provider-icon groq-icon" />
+                            <span class="provider-name">Groq</span>
+                          </div>
+                          <div class="provider-details">
+                            <p class="provider-feature">⚡ Fast & Cheap</p>
+                            <p class="provider-feature">30 requests/min</p>
+                            <p class="provider-feature">Recommended</p>
+                          </div>
+                          <div v-if="selectedAiProvider === 'groq'" class="provider-checkmark">✓</div>
+                        </div>
+
+                        <!-- Gemini Option -->
+                        <div
+                          @click="changeAiProvider('gemini')"
+                          :class="['provider-card', { selected: selectedAiProvider === 'gemini' }]"
+                        >
+                          <div class="provider-card-header">
+                            <Gauge :size="24" class="provider-icon gemini-icon" />
+                            <span class="provider-name">Gemini</span>
+                          </div>
+                          <div class="provider-details">
+                            <p class="provider-feature">🔬 Advanced</p>
+                            <p class="provider-feature">High Quality</p>
+                            <p class="provider-feature">Premium Model</p>
+                          </div>
+                          <div v-if="selectedAiProvider === 'gemini'" class="provider-checkmark">✓</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                  <!-- Connection Tab - Account & AI Provider Selection -->
+                  <div v-show="activeTab === 'connection'" class="connection-section tab-pane" style="display: none;">
+                  </div>
+
+                   <!-- Reminders Tab -->
+                   <div v-show="activeTab === 'reminders'" class="reminders-section tab-pane">
+                     <!-- Tab Title -->
+                     <div class="tab-title-section">
+                       <h3 class="tab-title">Reminders</h3>
+                       <div class="tab-divider"></div>
+                     </div>
+
+                     <!-- Reminders Content -->
+                     <div class="reminders-content">
+                       <!-- New Reminder Section -->
+                       <div class="reminder-form-container">
+                         <div class="new-reminder-header">
+                           <h4 class="new-reminder-title">New Reminder</h4>
+                           <div class="form-actions" style="margin-top: 0;">
+                             <button @click="saveReminder" class="btn btn-small" :disabled="isSavingReminder">
+                               {{ isSavingReminder ? 'Saving...' : 'Save' }}
+                             </button>
+                             <button @click="toggleReminderForm" class="btn btn-secondary btn-small">Cancel</button>
+                             <button class="btn-help" title="Help">?</button>
                            </div>
                          </div>
-                       </div>
-                     </div>
 
-                     <!-- Last Run Info -->
-                     <div v-if="status.lastRunAt" class="modern-card run-card">
-                       <div class="card-header">
-                         <Clock :size="18" class="card-icon" />
-                         <span class="card-title">Last Run</span>
-                       </div>
-                       <div class="card-content">
-                         <p class="run-time">{{ formatDate(status.lastRunAt) }}</p>
-                         <p class="run-hint">Last time the bot processed emails</p>
-                       </div>
-                     </div>
-
-                     <!-- Error Info -->
-                     <div v-if="status.lastError" class="modern-card error-card">
-                       <div class="card-header error-header">
-                         <AlertTriangle :size="18" class="card-icon" />
-                         <span class="card-title">Last Error</span>
-                       </div>
-                       <div class="card-content">
-                         <p class="error-message">{{ status.lastError }}</p>
-                       </div>
-                     </div>
-                   </div>
-                 </div>
-               </div>
-
-               <!-- Connection Tab - Account & AI Provider Selection -->
-               <div v-show="activeTab === 'connection'" class="connection-section tab-pane">
-                 <div class="connection-content">
-                   <div class="connection-header">
-                     <h3 class="connection-section-title">Account & AI Provider</h3>
-                     <p class="connection-subtitle">Manage Gmail connection and select your AI model</p>
-                   </div>
-
-                   <!-- Primary Connection Card -->
-                   <div v-if="!status.connected" class="primary-connection-card disconnected-card">
-                     <div class="connection-icon disconnected-icon">
-                       <AlertCircle :size="48" />
-                     </div>
-                     <div class="connection-info">
-                       <h4 class="connection-title">Gmail Account Not Connected</h4>
-                       <p class="connection-description">Connect your Gmail account to enable AI-powered auto-replies</p>
-                       <button @click="connectGmail" class="btn btn-primary btn-large" :disabled="isLoading">
-                         <LinkIcon v-if="!isLoading" :size="16" />
-                         <span v-if="!isLoading">Connect Gmail Account</span>
-                         <span v-else>Connecting...</span>
-                       </button>
-                     </div>
-                   </div>
-
-                   <div v-else class="primary-connection-card connected-card">
-                     <div class="connection-icon connected-icon">
-                       <CheckCircle2 :size="48" />
-                     </div>
-                     <div class="connection-info">
-                       <h4 class="connection-title">Connected</h4>
-                       <p class="connection-email">{{ status.gmailAddress }}</p>
-                     </div>
-                   </div>
-
-                   <!-- AI Provider Selection -->
-                   <div v-if="status.connected" class="ai-provider-section">
-                     <div class="provider-header">
-
-                       <p class="provider-description">Choose which AI model to use for auto-replies</p>
-                     </div>
-
-                     <div class="provider-grid">
-                       <!-- Groq Option -->
-                       <div
-                         @click="changeAiProvider('groq')"
-                         :class="['provider-card', { selected: selectedAiProvider === 'groq' }]"
-                       >
-                         <div class="provider-card-header">
-                           <Zap :size="24" class="provider-icon groq-icon" />
-                           <span class="provider-name">Groq</span>
+                         <!-- Main Input -->
+                         <div class="form-section">
+                           <label class="form-label">
+                             Remind after inactivity (minutes) <span class="required">*</span>
+                             <span class="info-icon" title="Remind user after this period of inactivity">(1)</span>
+                           </label>
+                           <input
+                             v-model.number="newReminder.afterInactive"
+                             type="number"
+                             min="5"
+                             placeholder="e.g., 60"
+                             class="form-input"
+                           />
                          </div>
-                         <div class="provider-details">
-                           <p class="provider-feature">⚡ Fast & Cheap</p>
-                           <p class="provider-feature">30 requests/min</p>
-                           <p class="provider-feature">Recommended</p>
+
+                         <!-- Optional Settings -->
+                         <div class="optional-settings">
+                           <p class="optional-label">Optional settings</p>
+                           <p class="optional-description">Select which fields to use</p>
+
+                           <div class="checkbox-group">
+                             <label class="checkbox-item">
+                               <input
+                                 v-model="visibleOptionalFields.contactEmail"
+                                 type="checkbox"
+                               />
+                               <span class="checkbox-text">Apply to specific contact</span>
+                               <span class="info-icon" title="Apply reminder to specific contact">(1)</span>
+                             </label>
+                              <div v-if="visibleOptionalFields.contactEmail" class="conditional-field">
+                                <select v-model="newReminder.contactEmail" class="form-input form-select">
+                                  <option value="">Select contact...</option>
+                                  <option v-for="contact in contactsList" :key="contact" :value="contact">
+                                    {{ contact }}
+                                  </option>
+                                </select>
+                              </div>
+                           </div>
+
+                           <div class="checkbox-group">
+                             <label class="checkbox-item">
+                               <input
+                                 v-model="visibleOptionalFields.maxReminders"
+                                 type="checkbox"
+                               />
+                               <span class="checkbox-text">Max reminders limit</span>
+                             </label>
+                             <div v-if="visibleOptionalFields.maxReminders" class="conditional-field">
+                               <input
+                                 v-model.number="newReminder.maxReminders"
+                                 type="number"
+                                 min="1"
+                                 placeholder="e.g., 5"
+                                 class="form-input"
+                               />
+                             </div>
+                            </div>
+
+                            <div class="checkbox-group">
+                              <label class="checkbox-item">
+                                <input
+                                  v-model="visibleOptionalFields.enabled"
+                                  type="checkbox"
+                                />
+                                <span class="checkbox-text">Enable/Disable status</span>
+                              </label>
+                              <div v-if="visibleOptionalFields.enabled" class="conditional-field">
+                                <label class="toggle-switch">
+                                  <input
+                                    v-model="newReminder.enabled"
+                                    type="checkbox"
+                                  />
+                                  <span class="toggle-slider"></span>
+                                  <span class="toggle-label">{{ newReminder.enabled ? 'Enabled' : 'Disabled' }}</span>
+                                </label>
+                              </div>
+                            </div>
                          </div>
-                         <div v-if="selectedAiProvider === 'groq'" class="provider-checkmark">✓</div>
                        </div>
 
-                       <!-- Gemini Option -->
-                       <div
-                         @click="changeAiProvider('gemini')"
-                         :class="['provider-card', { selected: selectedAiProvider === 'gemini' }]"
-                       >
-                         <div class="provider-card-header">
-                           <Gauge :size="24" class="provider-icon gemini-icon" />
-                           <span class="provider-name">Gemini</span>
+                       <!-- Configured Reminders Section -->
+                       <div class="configured-reminders">
+                         <div class="reminders-section-header">
+                           <h4 class="reminders-section-title">Configured Reminders</h4>
+                           <span class="reminders-count">({{ reminders.length }})</span>
                          </div>
-                         <div class="provider-details">
-                           <p class="provider-feature">🔬 Advanced</p>
-                           <p class="provider-feature">High Quality</p>
-                           <p class="provider-feature">Premium Model</p>
+
+                         <div v-if="reminders.length > 0" class="reminders-table-container">
+                            <table class="reminders-table">
+                              <thead>
+                                <tr>
+                                  <th>EMAIL</th>
+                                  <th>STATUS</th>
+                                  <th>SCHEDULE</th>
+                                  <th>MAX REMINDERS</th>
+                                  <th>ACTIONS</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr v-for="reminder in reminders" :key="reminder.contactEmail">
+                                  <td class="email-cell">{{ reminder.contactEmail || 'All Emails' }}</td>
+                                  <td class="status-cell">
+                                    <span :class="['status-badge', reminder.enabled ? 'active' : 'inactive']">
+                                      {{ reminder.enabled ? '● Active' : '● Inactive' }}
+                                    </span>
+                                  </td>
+                                  <td class="schedule-cell">Every {{ reminder.afterInactive }}m</td>
+                                  <td class="max-cell">{{ reminder.maxReminders }}</td>
+                                   <td class="actions-cell">
+                                    <button
+                                      @click="editReminder(reminder)"
+                                      class="action-btn edit-btn"
+                                      title="Edit"
+                                    >
+                                      <Edit :size="16" />
+                                    </button>
+                                    <button
+                                      @click="showDeleteConfirmPopup(reminder.contactEmail)"
+                                      class="action-btn delete-btn"
+                                      title="Delete"
+                                    >
+                                      <Trash :size="16" />
+                                    </button>
+                                  </td>
+                               </tr>
+                             </tbody>
+                           </table>
                          </div>
-                         <div v-if="selectedAiProvider === 'gemini'" class="provider-checkmark">✓</div>
+                         <div v-else class="no-reminders">
+                           <p>No reminders configured yet</p>
+                         </div>
                        </div>
                      </div>
                    </div>
-                 </div>
-               </div>
-           </div>
-         </main>
-       </div>
-     </div>
+             </div>
+           </main>
+         </div>
 
     <!-- Email Preview Modal -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
@@ -856,8 +1288,27 @@ Regarding your question: {body}
 I'd be happy to help! Feel free to reach out if you need more information.
 
 Best regards</div>
-            </div>
-          </div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Delete Confirmation Modal -->
+     <div v-if="showDeleteConfirm" class="modal-overlay" @click="cancelDelete">
+       <div class="modal delete-modal" @click.stop>
+         <div class="modal-header">
+           <h3>Delete Reminder</h3>
+           <span @click="cancelDelete" class="close-btn">x</span>
+         </div>
+         <div class="modal-content">
+           <p class="delete-message">Are you sure you want to delete the reminder for <strong>{{ deleteConfirmEmail }}</strong>?</p>
+           <p class="delete-warning">This action cannot be undone.</p>
+         </div>
+         <div class="modal-footer">
+           <button @click="cancelDelete" class="btn btn-secondary">Cancel</button>
+           <button @click="confirmDelete" class="btn btn-delete">Delete</button>
+         </div>
         </div>
       </div>
     </div>
@@ -870,7 +1321,7 @@ Best regards</div>
   }
 
   .email-bot-page {
-    max-height: 100vh;
+    min-height: 100vh;
     padding-top: 60px;
     color: #e8f7ff;
     position: relative;
@@ -947,7 +1398,7 @@ Best regards</div>
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 400px;
+    min-height: calc(100vh - 60px);
     padding: 24px;
   }
 
@@ -964,14 +1415,6 @@ Best regards</div>
     align-items: center;
     gap: 48px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  }
-
-  .not-connected-icon {
-    font-size: 72px;
-    opacity: 0.8;
-    animation: float 3s ease-in-out infinite;
-    grid-column: 1;
-    justify-self: center;
   }
 
   .not-connected-logo {
@@ -1097,41 +1540,13 @@ Best regards</div>
     font-size: 12px;
     font-weight: 600;
     text-align: center;
-    width: 100%;
-  }
-
-  .status-badge.connected {
-    background: rgba(0, 200, 100, 0.15);
-    color: #00c864;
-    border: 1px solid rgba(0, 200, 100, 0.3);
-  }
-
-  .status-badge.disconnected {
-    background: rgba(255, 100, 100, 0.15);
-    color: #ff6464;
-    border: 1px solid rgba(255, 100, 100, 0.3);
+    width: 100px;
   }
 
   .status-badge.active {
     background: rgba(0, 200, 100, 0.15);
     color: #00c864;
     border: 1px solid rgba(0, 200, 100, 0.3);
-  }
-
-  .status-badge.paused {
-    background: rgba(255, 180, 0, 0.15);
-    color: #ffb400;
-    border: 1px solid rgba(255, 180, 0, 0.3);
-  }
-
-  .email-display {
-    font-size: 12px;
-    color: #00f0ff;
-    word-break: break-all;
-    font-family: monospace;
-    padding: 6px;
-    background: rgba(0, 240, 255, 0.05);
-    border-radius: 6px;
   }
 
   .error-card {
@@ -1143,80 +1558,6 @@ Best regards</div>
     font-size: 12px;
     color: #ff6464;
     line-height: 1.4;
-  }
-
-  .sidebar-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  /* Status Overview */
-  .status-overview {
-    margin-bottom: 24px;
-    padding-bottom: 20px;
-  }
-
-  .status-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
-  }
-
-  .status-info-card {
-    padding: 16px;
-    background: transparent;
-    border: 1px solid rgba(0, 240, 255, 0.12);
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .status-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: rgba(232, 247, 255, 0.5);
-    font-weight: 600;
-  }
-
-  .status-badge-large {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 12px;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 600;
-    width: 100%;
-  }
-
-  .status-badge-large.connected {
-    background: rgba(0, 200, 100, 0.15);
-    color: #00c864;
-    border: 1px solid rgba(0, 200, 100, 0.3);
-  }
-
-  .status-badge-large.disconnected {
-    background: rgba(255, 100, 100, 0.15);
-    color: #ff6464;
-    border: 1px solid rgba(255, 100, 100, 0.3);
-  }
-
-  .email-address-display {
-    font-size: 12px;
-    color: #00f0ff;
-    word-break: break-all;
-    font-family: monospace;
-    padding: 8px;
-    background: rgba(0, 240, 255, 0.08);
-    border-radius: 8px;
-  }
-
-  .bot-toggle-container {
-    display: flex;
-    align-items: center;
-    gap: 12px;
   }
 
   .toggle-switch-large {
@@ -1269,131 +1610,304 @@ Best regards</div>
     cursor: not-allowed;
   }
 
-  .status-text {
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .status-text.running {
-    color: #00c864;
-  }
-
-  .status-text.paused {
-    color: #ffb400;
-  }
-
-  .error-info {
-    background: rgba(255, 100, 100, 0.08) !important;
-    border-color: rgba(255, 100, 100, 0.15) !important;
-  }
-
-  .error-text {
-    font-size: 12px;
-    color: #ff6464;
-    line-height: 1.4;
-  }
-
-  .section-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.2), transparent);
-    margin: 20px 0;
-  }
-
   /* Main Content */
   .main-content {
     background: transparent;
-    border: 1px solid rgba(0, 240, 255, 0.16);
+    height: auto;
+    min-height: calc(100vh - 60px);
     border-radius: 16px;
     backdrop-filter: blur(10px);
     overflow: hidden;
     display: flex;
     flex-direction: row;
     position: relative;
+    padding-top: 10px;
   }
 
-   .tab-header {
-     display: flex;
-     flex-direction: column;
-     gap: 8px;
-     border-bottom: none;
-     border-right: 1px solid rgba(0, 240, 255, 0.1);
-     background: transparent;
-     padding: 16px;
-     align-items: stretch;
-     height: auto;
-     flex-shrink: 0;
-   }
+     .tab-header {
+       display: flex;
+       flex-direction: column;
+       gap: 12px;
+       border-bottom: none;
+       border-right: 1px solid rgba(0, 240, 255, 0.15);
+       background: linear-gradient(180deg, rgba(0, 240, 255, 0.02) 0%, rgba(0, 200, 100, 0.01) 100%);
+       padding: 20px 14px;
+       height: auto;
+       align-items: start;
+       flex-shrink: 0;
+       overflow: hidden;
+       /* Smooth width transition for sidebar */
+       transition: width 0.3s ease-in-out, padding 0.3s ease-in-out;
+       width: 150px;
+     }
 
-    .tab-button {
-      padding: 12px 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      border: none;
-      background: transparent;
-      color: rgba(232, 247, 255, 0.6);
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-      position: relative;
-      overflow: hidden;
-      white-space: nowrap;
-      width: auto;
-      min-width: auto;
-      height: 44px;
-      flex: 0 1 auto;
+     .tab-header.collapsed {
+       width: 75px;
+       padding: 16px 10px;
+     }
+
+       .navbar-toggle-btn {
+         padding: 10px;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         border: 1px solid rgba(0, 240, 255, 0.15);
+         background: linear-gradient(135deg, rgba(0, 240, 255, 0.06), rgba(0, 200, 100, 0.03));
+         border-radius: 12px;
+         color: rgba(232, 247, 255, 0.7);
+         cursor: pointer;
+         transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+         margin-bottom: 8px;
+         margin-left: auto;
+         height: 44px;
+         width: 44px;
+         font-size: 16px;
+         position: relative;
+         overflow: hidden;
+         z-index: 10;
+       }
+
+       /* Animation when navbar is expanded */
+       .tab-header:not(.collapsed) .navbar-toggle-btn {
+         animation: toggleButtonPulseExpand 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+       }
+
+       /* Animation when navbar is collapsed */
+       .tab-header.collapsed .navbar-toggle-btn {
+         animation: toggleButtonPulseCollapse 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+         margin-left: auto;
+         margin-right: auto;
+       }
+
+       .navbar-toggle-btn::before {
+         content: '';
+         position: absolute;
+         inset: 0;
+         background: radial-gradient(circle at center, rgba(0, 240, 255, 0.12) 0%, transparent 70%);
+         opacity: 0;
+         transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+         border-radius: 12px;
+       }
+
+       .navbar-toggle-btn:hover {
+         border-color: rgba(0, 240, 255, 0.3);
+         background: linear-gradient(135deg, rgba(0, 240, 255, 0.12), rgba(0, 200, 100, 0.08));
+         color: #00f0ff;
+         box-shadow: 0 4px 16px rgba(0, 240, 255, 0.12);
+       }
+
+       .navbar-toggle-btn:hover::before {
+         opacity: 1;
+       }
+
+       .navbar-toggle-btn:active {
+         transform: scale(0.93);
+       }
+
+       .toggle-icon {
+         transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         width: 20px;
+         height: 20px;
+         color: inherit;
+       }
+
+       .navbar-toggle-btn:hover .toggle-icon {
+         transform: scale(1.15);
+       }
+
+       .navbar-toggle-btn:active .toggle-icon {
+         transform: scale(0.9);
+       }
+
+       /* Animation keyframes for toggle button state change */
+       @keyframes toggleButtonPulseExpand {
+         0% {
+           transform: scale(0.95);
+           border-color: rgba(0, 240, 255, 0.12);
+           background: linear-gradient(135deg, rgba(0, 240, 255, 0.04), rgba(0, 200, 100, 0.02));
+           box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+         }
+         50% {
+           transform: scale(1.08);
+           border-color: rgba(0, 240, 255, 0.35);
+           background: linear-gradient(135deg, rgba(0, 240, 255, 0.14), rgba(0, 200, 100, 0.1));
+           box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+         }
+         100% {
+           transform: scale(1);
+           border-color: rgba(0, 240, 255, 0.2);
+           background: linear-gradient(135deg, rgba(0, 240, 255, 0.08), rgba(0, 200, 100, 0.05));
+           box-shadow: 0 4px 16px rgba(0, 240, 255, 0.12);
+         }
+       }
+
+       @keyframes toggleButtonPulseCollapse {
+         0% {
+           transform: scale(0.95);
+           border-color: rgba(0, 240, 255, 0.2);
+           background: linear-gradient(135deg, rgba(0, 240, 255, 0.08), rgba(0, 200, 100, 0.05));
+           box-shadow: 0 4px 16px rgba(0, 240, 255, 0.12);
+         }
+         50% {
+           transform: scale(1.08);
+           border-color: rgba(0, 240, 255, 0.35);
+           background: linear-gradient(135deg, rgba(0, 240, 255, 0.14), rgba(0, 200, 100, 0.1));
+           box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+         }
+         100% {
+           transform: scale(1);
+           border-color: rgba(0, 240, 255, 0.12);
+           background: linear-gradient(135deg, rgba(0, 240, 255, 0.04), rgba(0, 200, 100, 0.02));
+           box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+         }
+       }
+
+       .tab-button {
+         padding: 14px 16px;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         gap: 12px;
+         cursor: pointer;
+         font-size: 13px;
+         font-weight: 600;
+         transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+         position: relative;
+         overflow: visible;
+         white-space: nowrap;
+         width: auto;
+         min-width: auto;
+         height: 44px;
+         flex: 0 1 auto;
+         letter-spacing: 0.3px;
+         border:none;
+         background: transparent;
+          color: rgba(232, 247, 255, 0.7);
+
+       }
+
+        .tab-label {
+          display: inline-block;
+          max-width: 100px;
+          overflow: hidden;
+          opacity: 1;
+          /* Slide in from left + fade in */
+          transform: translateX(0px);
+          transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        .tab-header.collapsed .tab-label {
+          /* Slide out to left + fade out */
+          opacity: 0;
+          transform: translateX(-25px);
+          pointer-events: none;
+        }
+
+     .tab-button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
-   .tab-button:disabled {
-     opacity: 0.5;
-     cursor: not-allowed;
+   .tab-button::before {
+     content: '';
+     position: absolute;
+     inset: 0;
+     background: radial-gradient(circle at center, rgba(0, 240, 255, 0.08) 0%, transparent 70%);
+     opacity: 0;
+     transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
      pointer-events: none;
    }
 
-  .tab-button::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    pointer-events: none;
-  }
+   .tab-button:hover {
+        color: #e8f7ff;
+     transform: translateY(-2px);
+   }
 
-  .tab-button:hover {
-    color: #e8f7ff;
-  }
+   .tab-button:hover::before {
+     opacity: 1;
+   }
 
-  .tab-button:hover::before {
-    opacity: 1;
-  }
+   .tab-button.active {
+     color: #00f0ff;
+   }
 
-  .tab-button.active {
-    color: #00f0ff;
-  }
+   .tab-button.active::before {
+     opacity: 0;
+   }
 
-  .tab-button.active::before {
-    opacity: 0;
-  }
+    .tab-icon {
+      font-size: 18px;
+      transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      flex-shrink: 0;
+    }
 
-  .tab-icon {
-    font-size: 18px;
-  }
+    .tab-button:hover .tab-icon {
+      transform: scale(1.1);
+    }
 
-   .tab-content {
+    .tab-button.active .tab-icon {
+      transform: scale(1.15);
+    }
+
+   /* Tab Title Section */
+    .tab-title-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      padding-top: 16px;
+      flex-shrink: 0;
+    }
+
+   .tab-title {
+     font-size: 20px;
+     font-weight: 700;
+     background: linear-gradient(135deg, #e8f7ff 0%, #00f0ff 50%, #00d4ff 100%);
+     -webkit-background-clip: text;
+     -webkit-text-fill-color: transparent;
+     background-clip: text;
+     margin: 0;
+     letter-spacing: 0.5px;
+     text-transform: uppercase;
+     font-family: 'Comfortaa', sans-serif;
+     text-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+   }
+
+   .tab-divider {
+     height: 1px;
+     background: rgba(0, 240, 255, 0.5);
+     opacity: .4;
+     border-radius: 1px;
+     box-shadow: 0 0 12px rgba(0, 240, 255, 0.2);
+     padding: 0;
+   }
+
+    .tab-content {
      padding: 20px;
      flex: 1;
      display: flex;
      flex-direction: column;
      overflow: hidden;
-   }
+     transition: none;
+    }
 
     /* ...existing code... */
 
     /* Tab Pane Animation */
     .tab-pane {
       animation: fadeInTab 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
     }
 
     @keyframes fadeInTab {
@@ -1407,13 +1921,14 @@ Best regards</div>
       }
     }
 
-   /* Mailbox Section */
-   .mailbox-header {
-     display: flex;
-     align-items: center;
-     gap: 12px;
-     margin-bottom: 24px;
-   }
+    /* Mailbox Section */
+    .mailbox-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-shrink: 0;
+    }
 
    .mailbox-selector {
      display: flex;
@@ -1422,50 +1937,6 @@ Best regards</div>
      flex: 1;
      padding: 12px;
      border-radius: 12px;
-   }
-
-   .refresh-btn {
-     display: flex;
-     align-items: center;
-     justify-content: center;
-     width: 40px;
-     height: 40px;
-     padding: 0;
-     border: 1px solid rgba(0, 240, 255, 0.15);
-     background: rgba(0, 240, 255, 0.05);
-     border-radius: 10px;
-     cursor: pointer;
-     transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-     color: rgba(232, 247, 255, 0.65);
-   }
-
-   .refresh-btn:hover:not(:disabled) {
-     border-color: rgba(0, 240, 255, 0.3);
-     background: rgba(0, 240, 255, 0.09);
-     color: #00f0ff;
-   }
-
-   .refresh-btn:active:not(:disabled) {
-     transform: scale(0.95);
-   }
-
-   .refresh-btn:disabled {
-     opacity: 0.5;
-     cursor: not-allowed;
-   }
-
-   .refresh-icon {
-     font-size: 18px;
-     display: inline-block;
-     transition: transform 0.6s linear;
-   }
-
-   .refresh-btn:not(:disabled):active .refresh-icon {
-     animation: spin 0.6s linear;
-   }
-
-   @keyframes spin {
-     to { transform: rotate(360deg); }
    }
 
    /* Mailbox Tab Buttons - New Design */
@@ -1577,65 +2048,6 @@ Best regards</div>
      }
    }
 
-   .mailbox-tab {
-     display: inline-flex;
-     align-items: center;
-     justify-content: center;
-     gap: 6px;
-     padding: 10px 14px;
-     border-radius: 10px;
-     border: 1px solid rgba(0, 240, 255, 0.15);
-     background: rgba(0, 240, 255, 0.05);
-     color: rgba(232, 247, 255, 0.65);
-     cursor: pointer;
-     font-size: 12px;
-     font-weight: 600;
-     transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-     position: relative;
-     flex: 1;
-     white-space: nowrap;
-   }
-
-   .mailbox-tab:disabled {
-     opacity: 0.5;
-     cursor: not-allowed;
-     pointer-events: none;
-   }
-
-   .mailbox-tab::before {
-     content: '';
-     position: absolute;
-     inset: 0;
-     background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), transparent);
-     opacity: 0;
-     border-radius: 10px;
-     transition: opacity 0.25s ease;
-     pointer-events: none;
-   }
-
-   .mailbox-tab:hover {
-     border-color: rgba(0, 240, 255, 0.3);
-     background: rgba(0, 240, 255, 0.09);
-     color: #00f0ff;
-   }
-
-   .mailbox-tab:hover::before {
-     opacity: 1;
-   }
-
-   .mailbox-tab.active {
-     border-color: rgba(0, 240, 255, 0.5);
-     background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(0, 240, 255, 0.08));
-     color: #00f0ff;
-     box-shadow:
-       0 4px 12px rgba(0, 240, 255, 0.12),
-       inset 0 1px 0 rgba(0, 240, 255, 0.2);
-   }
-
-   .mailbox-tab.active::before {
-     opacity: 0;
-   }
-
    .mailbox-icon {
      font-size: 16px;
      display: flex;
@@ -1644,29 +2056,14 @@ Best regards</div>
      transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
    }
 
-   .mailbox-tab:hover .mailbox-icon {
-     transform: scale(1.1) rotate(-5deg);
-   }
-
-   .mailbox-tab.active .mailbox-icon {
-     transform: scale(1.15);
-   }
-
-   .mailbox-label {
-     font-size: 12px;
-     font-weight: 600;
-     letter-spacing: 0.2px;
-     transition: all 0.25s ease;
-   }
-
-  .email-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 600px;
-    overflow-y: auto;
-    padding-right: 8px;
-  }
+      .email-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      padding-right: 8px;
+      max-height: clamp(250px, calc(100vh - 280px), 500px);
+    }
 
   .email-list::-webkit-scrollbar {
     width: 6px;
@@ -1728,7 +2125,7 @@ Best regards</div>
       padding: 22px 14px 12px 14px;
       border-radius: 10px;
       border: 1px solid rgba(0, 240, 255, 0.12);
-      background: rgba(0, 240, 255, 0.03);
+      background: rgb(175 175 175 / 6%);
       cursor: pointer;
       transition: all 0.25s ease;
       display: grid;
@@ -1744,12 +2141,6 @@ Best regards</div>
      background: rgba(0, 240, 255, 0.08);
      transform: translateX(4px);
      box-shadow: 0 4px 12px rgba(0, 240, 255, 0.1);
-   }
-
-   .email-item.active {
-     border-color: rgba(0, 240, 255, 0.4);
-     background: rgba(0, 240, 255, 0.12);
-     box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15);
    }
 
     .email-from {
@@ -1986,15 +2377,16 @@ Best regards</div>
     }
 
     /* Pagination Controls */
-   .pagination-controls {
-     display: flex;
-     justify-content: space-between;
-     align-items: center;
-     gap: 12px;
-     padding: 14px 12px;
-     margin-top: 8px;
-     border-radius: 0 0 10px 10px;
-   }
+    .pagination-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 12px;
+      margin-top: 8px;
+      border-radius: 0 0 10px 10px;
+      flex-shrink: 0;
+    }
 
    .pagination-spacer {
      flex: 1;
@@ -2112,6 +2504,31 @@ Best regards</div>
     background: rgba(0, 240, 255, 0.08);
   }
 
+  .form-select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(0,240,255,0.6)'%3e%3cpath d='M6 9l6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 1.5em 1.5em;
+    padding-right: 36px;
+  }
+
+  .form-select:hover {
+    border-color: rgba(0, 240, 255, 0.4);
+  }
+
+  .form-select:focus {
+    border-color: rgba(0, 240, 255, 0.6);
+    box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.1);
+  }
+
+  .form-select option {
+    background: rgba(10, 10, 18, 0.9);
+    color: rgba(232, 247, 255, 0.9);
+    padding: 10px;
+  }
+
   .form-textarea {
     min-height: 140px;
     resize: vertical;
@@ -2184,6 +2601,17 @@ Best regards</div>
     border-color: rgba(0, 240, 255, 0.5);
   }
 
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: rgba(232, 247, 255, 0.4);
+  }
+
+  .btn-primary:disabled {
+    background: rgba(0, 240, 255, 0.05);
+    border-color: rgba(0, 240, 255, 0.15);
+  }
+
   .btn-full {
     width: 100%;
   }
@@ -2242,15 +2670,61 @@ Best regards</div>
     font-weight: 600;
   }
 
-  .modal-content {
-    padding: 20px;
-  }
+   .modal-content {
+     padding: 20px;
+   }
 
-  .email-preview {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
+   .modal-footer {
+     display: flex;
+     gap: 12px;
+     justify-content: flex-end;
+     padding: 16px 20px;
+     border-top: 1px solid rgba(0, 240, 255, 0.12);
+   }
+
+   .delete-modal {
+     width: min(400px, 90vw);
+   }
+
+   .delete-message {
+     margin: 0 0 12px 0;
+     font-size: 14px;
+     color: rgba(232, 247, 255, 0.9);
+     line-height: 1.5;
+   }
+
+   .delete-message strong {
+     color: #ff6464;
+     font-weight: 600;
+   }
+
+   .delete-warning {
+     margin: 0;
+     font-size: 12px;
+     color: rgba(255, 100, 100, 0.7);
+   }
+
+   .btn-delete {
+     padding: 10px 24px;
+     background: rgba(255, 100, 100, 0.15);
+     border: 1px solid rgba(255, 100, 100, 0.3);
+     color: #ff6464;
+     border-radius: 8px;
+     cursor: pointer;
+     font-weight: 600;
+     transition: all 0.25s ease;
+   }
+
+   .btn-delete:hover {
+     background: rgba(255, 100, 100, 0.25);
+     border-color: rgba(255, 100, 100, 0.5);
+   }
+
+   .email-preview {
+     display: flex;
+     flex-direction: column;
+     gap: 16px;
+   }
 
   .preview-field {
     display: flex;
@@ -2314,225 +2788,11 @@ Best regards</div>
     white-space: pre-wrap;
   }
 
-  .placeholder-section {
-    border-top: 1px solid rgba(0, 240, 255, 0.2);
-    padding-top: 12px;
-  }
-
-  .placeholder-section h4 {
-    margin: 0 0 12px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #00f0ff;
-  }
-
-  .placeholder-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .placeholder-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px;
-    border-radius: 8px;
-    background: rgba(0, 240, 255, 0.05);
-    border: 1px solid rgba(0, 240, 255, 0.1);
-  }
-
-  .placeholder-item code {
-    padding: 4px 8px;
-    border-radius: 4px;
-    background: rgba(0, 240, 255, 0.15);
-    color: #00f0ff;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-   .placeholder-item span {
-     font-size: 12px;
-     color: rgba(232, 247, 255, 0.7);
-   }
-
-   /* Status Section */
-   .status-section {
-     min-height: 400px;
-   }
-
-   .status-content {
-     display: flex;
-     flex-direction: column;
-     gap: 24px;
-   }
-
-   .status-section-title {
-     margin: 0;
-     font-size: 18px;
-     font-weight: 600;
-     color: #e8f7ff;
-     letter-spacing: 0.5px;
-   }
-
-   .status-overview-full {
-     margin-bottom: 12px;
-     padding-bottom: 12px;
-   }
-
-   .status-detail {
-     margin: 8px 0 0;
-     padding: 8px 0;
-     font-size: 12px;
-     color: rgba(232, 247, 255, 0.6);
-     display: flex;
-     flex-direction: column;
-     gap: 4px;
-   }
-
-   .detail-label {
-     font-size: 11px;
-     text-transform: uppercase;
-     letter-spacing: 0.6px;
-     color: rgba(232, 247, 255, 0.4);
-     font-weight: 600;
-   }
-
-   .detail-value {
-     font-family: 'Courier New', monospace;
-     color: #00f0ff;
-     word-break: break-all;
-   }
-
-   .trigger-keyword {
-     padding: 10px 12px;
-     border-radius: 8px;
-     background: rgba(0, 240, 255, 0.08);
-     border: 1px solid rgba(0, 240, 255, 0.2);
-     font-size: 12px;
-     color: #00f0ff;
-     font-weight: 500;
-   }
-
-   .last-run {
-     padding: 10px 12px;
-     border-radius: 8px;
-     background: rgba(0, 240, 255, 0.08);
-     border: 1px solid rgba(0, 240, 255, 0.2);
-     font-size: 12px;
-     color: rgba(232, 247, 255, 0.7);
-   }
-
-    .action-card {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    /* Redesigned Status Tab Styles */
-    .status-header {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .status-subtitle {
-      margin: 0;
-      font-size: 13px;
-      color: rgba(232, 247, 255, 0.6);
-      font-weight: 400;
-    }
-
-    /* Primary Connection Card */
-    .primary-connection-card {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      padding: 24px;
-      border-radius: 14px;
-      border: 1px solid rgba(0, 240, 255, 0.12);
-      transition: all 0.3s ease;
-    }
-
-    .primary-connection-card.connected-card {
-      background: rgba(0, 240, 255, 0.04);
-      border: 1px solid rgba(0, 240, 255, 0.12);
-    }
-
-    .primary-connection-card.disconnected-card {
-      background: linear-gradient(135deg, rgba(255, 100, 100, 0.08), rgba(255, 150, 100, 0.08));
-      border-color: rgba(255, 100, 100, 0.3);
-    }
-
-    .connection-icon {
-      font-size: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-
-      width: 60px;
-      height: 60px;
-    }
-
-    .connection-icon connected-icon {
-      color: #00c864;
-    }
-
-    .connection-icon.disconnected-icon {
-      color: #ff6464;
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-
-    .connection-info {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .connection-title {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 700;
-      color: #e8f7ff;
-    }
-
-    .connection-email {
-      margin: 0;
-      font-size: 13px;
-      font-family: 'Courier New', monospace;
-      color: #00f0ff;
-      font-weight: 500;
-    }
-
-    .connection-description {
-      margin: 0;
-      font-size: 12px;
-      color: rgba(232, 247, 255, 0.6);
-    }
-
-    .btn-large {
-      padding: 12px 24px;
-      font-size: 14px;
-      font-weight: 600;
-      width: auto;
-    }
-
     /* Modern Card Grid */
     .status-grid-modern {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
-      margin-bottom: 24px;
     }
 
     .modern-card {
@@ -2638,37 +2898,6 @@ Best regards</div>
       color: rgba(232, 247, 255, 0.5);
     }
 
-    /* Keyword Display */
-    .keyword-display {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      background: rgba(0, 240, 255, 0.1);
-      border: 1px solid rgba(0, 240, 255, 0.2);
-      min-height: 32px;
-    }
-
-    .keyword-value {
-      font-size: 13px;
-      font-weight: 600;
-      color: #00f0ff;
-      font-family: 'Courier New', monospace;
-    }
-
-    .keyword-default {
-      font-size: 12px;
-      color: rgba(232, 247, 255, 0.5);
-      font-style: italic;
-    }
-
-    .keyword-hint {
-      margin: 0;
-      font-size: 11px;
-      color: rgba(232, 247, 255, 0.5);
-    }
-
     /* Run Time Display */
     .run-time {
       margin: 0;
@@ -2691,52 +2920,6 @@ Best regards</div>
       line-height: 1.5;
       word-break: break-word;
     }
-
-    /* Quick Stats Section */
-    .quick-stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-      gap: 12px;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid rgba(0, 240, 255, 0.15);
-      background: rgba(0, 240, 255, 0.03);
-    }
-
-    .stat-item {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      align-items: center;
-      text-align: center;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: rgba(232, 247, 255, 0.5);
-      font-weight: 600;
-    }
-
-    .stat-value {
-      font-size: 13px;
-      font-weight: 700;
-      color: rgba(232, 247, 255, 0.8);
-      padding: 4px 8px;
-      border-radius: 6px;
-      background: rgba(0, 240, 255, 0.1);
-    }
-
-    .stat-value.active {
-      color: #00c864;
-      background: rgba(0, 200, 100, 0.15);
-    }
-
-     .stat-value.inactive {
-       color: #ffb400;
-       background: rgba(255, 180, 0, 0.15);
-     }
 
    /* Mailbox Tab Responsive Styles */
    @media (max-width: 1024px) {
@@ -2810,9 +2993,14 @@ Best regards</div>
         padding-top: 20px;
       }
 
+      .not-connected-screen {
+        min-height: calc(100vh - 20px);
+      }
+
       .main-content {
         flex-direction: column;
-        min-height: auto;
+        height: auto;
+        min-height: calc(100vh - 20px);
         border-radius: 12px;
       }
 
@@ -2837,7 +3025,10 @@ Best regards</div>
       .tab-content {
         min-height: auto;
         padding: 12px;
-        max-height: calc(100vh - 180px);
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
 
       .mailbox-header {
@@ -2847,25 +3038,15 @@ Best regards</div>
       }
 
       .mailbox-selector {
-        grid-template-columns: repeat(2, 1fr);
         padding: 8px;
         gap: 6px;
-      }
-
-      .mailbox-tab {
-        padding: 8px 10px;
-        font-size: 11px;
-        flex: 1;
-      }
-
-      .refresh-btn {
-        width: 36px;
-        height: 36px;
       }
 
       .email-list {
         gap: 6px;
         padding-right: 4px;
+        max-height: clamp(250px, calc(100vh - 300px), 450px);
+        overflow-y: auto;
       }
 
       .email-item {
@@ -2908,41 +3089,6 @@ Best regards</div>
         min-width: 70px;
       }
 
-      .status-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .primary-connection-card {
-        flex-direction: column;
-        text-align: center;
-        gap: 16px;
-        padding: 16px;
-      }
-
-      .connection-icon {
-        width: 48px;
-        height: 48px;
-      }
-
-      .connection-info {
-        align-items: center;
-      }
-
-      .connection-title {
-        font-size: 14px;
-      }
-
-      .status-grid-modern {
-        grid-template-columns: 1fr;
-        gap: 12px;
-      }
-
-      .quick-stats {
-        grid-template-columns: repeat(2, 1fr);
-        padding: 12px;
-        gap: 10px;
-      }
-
       .not-connected-card {
         grid-template-columns: 1fr;
         gap: 24px;
@@ -2954,7 +3100,7 @@ Best regards</div>
       }
 
       .not-connected-logo {
-        grid-column: 1;
+        display: none;
       }
 
       .logo-image {
@@ -3040,10 +3186,6 @@ Best regards</div>
         font-size: 11px;
       }
 
-      .status-badge-large {
-        font-size: 12px;
-      }
-
       .card-title {
         font-size: 12px;
       }
@@ -3066,24 +3208,8 @@ Best regards</div>
         padding-top: 12px;
       }
 
-      .tab-header {
-        padding: 6px;
-        gap: 3px;
-      }
-
-      .tab-button {
-        height: 36px;
-        padding: 6px 8px;
-        font-size: 11px;
-      }
-
-      .tab-content {
-        padding: 8px;
-        max-height: calc(100vh - 160px);
-      }
-
-      .mailbox-header {
-        gap: 6px;
+      .not-connected-screen {
+        min-height: calc(100vh - 12px);
       }
 
       .mailbox-selector {
@@ -3091,14 +3217,9 @@ Best regards</div>
         gap: 4px;
       }
 
-      .mailbox-tab {
-        padding: 6px 8px;
-        font-size: 10px;
-      }
-
-      .refresh-btn {
-        width: 32px;
-        height: 32px;
+        flex: none;
+        max-height: clamp(200px, calc(100vh - 320px), 350px);
+        overflow-y: auto;
       }
 
       .email-item {
@@ -3107,7 +3228,7 @@ Best regards</div>
       }
 
       .email-from {
-        font-size: 10px;
+        font-size: 12px;
       }
 
       .email-subject {
@@ -3115,7 +3236,7 @@ Best regards</div>
       }
 
       .email-snippet {
-        font-size: 9px;
+        font-size: 11px;
       }
 
       .email-date {
@@ -3125,6 +3246,7 @@ Best regards</div>
       .pagination-controls {
         padding: 8px 6px;
         gap: 6px;
+        flex-shrink: 0;
       }
 
       .pagination-btn {
@@ -3166,44 +3288,19 @@ Best regards</div>
         font-size: 12px;
       }
 
-       .status-badge-large {
-         font-size: 11px;
-       }
-      }
+    /* Connection Section Styles */
+    .connection-section {
+      min-height: 400px;
+    }
 
-  /* Connection Section Styles */
-  .connection-section {
-    min-height: 400px;
-  }
 
-  .connection-content,
+  /* AI Provider Selection */
   .status-content {
     display: flex;
     flex-direction: column;
     gap: 24px;
   }
 
-  .connection-header,
-  .status-header {
-    margin-bottom: 12px;
-  }
-
-  .connection-section-title,
-  .status-section-title {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 700;
-    color: #e8f7ff;
-  }
-
-  .connection-subtitle,
-  .status-subtitle {
-    margin: 8px 0 0 0;
-    font-size: 13px;
-    color: rgba(232, 247, 255, 0.6);
-  }
-
-  /* AI Provider Selection */
   .ai-provider-section {
     display: flex;
     flex-direction: column;
@@ -3317,11 +3414,1858 @@ Best regards</div>
     border: 1px solid rgba(0, 200, 100, 0.4);
   }
 
+  /* Info Box for warnings/tips */
+  .info-box {
+    margin: 12px 0 0 0;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: rgba(255, 193, 7, 0.08);
+    border: 1px solid rgba(255, 193, 7, 0.2);
+    font-size: 12px;
+    color: rgba(255, 247, 223, 0.9);
+    line-height: 1.5;
+  }
+
+  .info-box strong {
+    color: #ffc107;
+    font-weight: 600;
+  }
+
+  /* Optional Badge */
+  .optional-badge {
+    font-size: 11px;
+    color: rgba(0, 240, 255, 0.6);
+    font-weight: 400;
+    font-style: italic;
+  }
+
   /* Responsive Provider Grid */
   @media (max-width: 768px) {
     .provider-grid {
       grid-template-columns: 1fr;
     }
   }
-</style>
+
+  /* Responsive Tab Layout for Mobile */
+  @media (max-width: 1024px) {
+    .main-content {
+      height: auto;
+      min-height: calc(100vh - 60px);
+      flex-direction: column;
+    }
+
+    .tab-header {
+      display: flex;
+      flex-direction: row;
+      gap: 4px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+      border-right: none;
+      padding: 8px;
+      height: auto;
+      width: 100%;
+      justify-content: flex-start;
+      overflow-x: auto;
+    }
+
+    .tab-button {
+      padding: 8px 12px;
+      font-size: 12px;
+      height: 40px;
+      min-width: auto;
+      flex: 0 0 auto;
+    }
+
+    .tab-label {
+      display: none;
+    }
+
+    .tab-content {
+      padding: 12px;
+    }
+
+    .settings-section {
+      min-height: auto;
+      max-height: auto;
+    }
+
+    .config-form {
+      gap: 20px;
+    }
+
+    .status-grid-modern {
+      grid-template-columns: 1fr;
+    }
+
+    .email-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
+
+  /* Extra Small Devices */
+  @media (max-width: 480px) {
+    .main-content {
+      min-height: calc(100vh - 60px);
+      height: auto;
+      border-radius: 8px;
+      margin-top:35px
+    }
+
+    .tab-header {
+      gap: 2px;
+      padding: 4px;
+      padding-top: 14px;
+    }
+
+    .tab-button {
+      padding: 6px 10px;
+      font-size: 11px;
+      height: 38px;
+    }
+
+    .tab-icon {
+      font-size: 16px;
+    }
+
+    .tab-content {
+      padding: 8px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .form-input,
+    .form-textarea {
+      padding: 10px;
+      font-size: 14px;
+    }
+
+    .form-textarea {
+      min-height: 100px;
+      max-height: 200px;
+    }
+
+    .mailbox-header {
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .email-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      gap: 6px;
+    }
+
+     .email-item {
+       padding: 12px 10px 8px 10px;
+       min-height: 50px;
+     }
+
+     .status-grid-modern {
+       gap: 8px;
+     }
+
+     .provider-card {
+       padding: 12px;
+     }
+   }
+
+   /* Mobile Responsive - Hide toggle, Icon-only navbar */
+   @media (max-width: 768px) {
+      .main-content {
+        flex-direction: column;
+        height: auto;
+        min-height: calc(100vh - 60px);
+      }
+
+     .tab-header {
+       flex-direction: row;
+       width: 100% !important;
+       height: auto;
+       border-right: none;
+       border-bottom: 1px solid rgba(0, 240, 255, 0.15);
+       padding: 12px 14px;
+       gap: 8px;
+       overflow-x: auto;
+       overflow-y: hidden;
+       align-items: center;
+       background: linear-gradient(90deg, rgba(0, 240, 255, 0.02) 0%, rgba(0, 200, 100, 0.01) 100%);
+       transition: none;
+     }
+
+     .tab-header.collapsed {
+       width: 100% !important;
+       padding: 12px 14px;
+     }
+
+     /* Hide toggle button on mobile */
+     .navbar-toggle-btn {
+       display: none !important;
+     }
+
+     /* Make tab buttons icon-only on mobile */
+     .tab-button {
+       padding: 10px 12px;
+       gap: 0;
+       width: auto;
+       height: 40px;
+       min-width: 44px;
+     }
+
+     /* Hide labels on mobile */
+     .tab-label {
+       display: none !important;
+     }
+
+     .tab-header.collapsed .tab-label {
+       display: none !important;
+     }
+
+     .tab-icon {
+       font-size: 18px;
+     }
+
+      /* Make tab content full width */
+      .tab-content {
+        padding: 16px;
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* Adjust tab buttons styling for mobile */
+      .tab-button:hover {
+        transform: scale(1.08);
+      }
+
+        /* Email list adjustments */
+        .email-list {
+          max-height: clamp(250px, calc(100vh - 300px), 450px);
+          overflow-y: auto;
+        }
+
+      /* Pagination adjustments */
+      .pagination-controls {
+        flex-shrink: 0;
+      }
+
+      /* Mailbox section adjustments */
+      .mailbox-tab-btn {
+        padding: 9px 14px;
+        font-size: 12px;
+        gap: 8px;
+      }
+
+     .mailbox-btn-label {
+       font-size: 12px;
+     }
+
+     /* Form adjustments for mobile */
+     .form-input,
+     .form-textarea {
+       font-size: 16px; /* Prevent zoom on iOS */
+     }
+
+     /* Status section */
+     .status-grid-modern {
+       grid-template-columns: 1fr;
+     }
+
+      /* Email item adjustments */
+      .email-item {
+        padding: 16px 12px 10px 12px;
+      }
+
+      /* Tab title responsive */
+      .tab-title-section {
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        padding-top: 12px;
+        gap: 10px;
+      }
+
+      .tab-title {
+        font-size: 16px;
+        letter-spacing: 0.3px;
+      }
+
+      .tab-divider {
+        height: 1px;
+      }
+
+      /* Modal adjustments */
+      .modal {
+        width: 90%;
+        max-width: 100%;
+        max-height: 90vh;
+      }
+
+       .modal-content {
+         max-height: 70vh;
+         overflow-y: auto;
+       }
+
+       /* Reminders layout: stack on mobile */
+       .reminders-layout {
+         grid-template-columns: 1fr;
+         gap: 16px;
+       }
+
+       .reminder-form-card {
+         position: static;
+       }
+     }
+
+    /* Tablet Responsive */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .tab-header {
+        width: 120px;
+      }
+
+      .tab-header.collapsed {
+        width: 60px;
+      }
+
+      .tab-button {
+        padding: 12px 12px;
+      }
+
+      .tab-content {
+        padding: 16px;
+      }
+
+      /* Tablet title adjustments */
+      .tab-title-section {
+        margin-bottom: 18px;
+        padding-bottom: 14px;
+        padding-top: 14px;
+      }
+
+      .tab-title {
+        font-size: 18px;
+        letter-spacing: 0.4px;
+      }
+    }
+
+    /* Small mobile adjustments */
+    @media (max-width: 480px) {
+      .tab-header {
+        padding: 10px 8px;
+        gap: 6px;
+      }
+
+      .tab-button {
+        padding: 8px 10px;
+        min-width: 40px;
+        height: 36px;
+      }
+
+      .tab-icon {
+        font-size: 16px;
+      }
+
+      .tab-content {
+        padding: 12px;
+      }
+
+      /* Small mobile title adjustments */
+      .tab-title-section {
+        margin-bottom: 14px;
+        padding-bottom: 10px;
+        padding-top: 10px;
+        gap: 8px;
+      }
+
+      .tab-title {
+        font-size: 14px;
+        letter-spacing: 0.2px;
+      }
+
+      .tab-divider {
+        height: 1px;
+        box-shadow: 0 0 8px rgba(0, 240, 255, 0.15);
+      }
+
+      .mailbox-selector {
+        gap: 4px;
+        padding: 8px;
+      }
+
+      .mailbox-tab-btn {
+        padding: 8px 10px;
+        font-size: 11px;
+        height: 36px;
+      }
+
+      .email-item {
+        padding: 12px 8px 8px 8px;
+        min-height: 50px;
+      }
+
+      .email-from {
+        font-size: 11px;
+      }
+
+      .email-subject {
+        font-size: 12px;
+      }
+
+      .email-snippet {
+        font-size: 10px;
+      }
+
+      .email-date {
+        font-size: 9px;
+      }
+
+      .pagination-controls {
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .pagination-btn {
+        width: 100%;
+        padding: 10px 12px;
+       font-size: 12px;
+     }
+
+     .form-section {
+       margin-bottom: 16px;
+     }
+
+     .form-label {
+       font-size: 12px;
+     }
+
+     .form-input,
+     .form-textarea {
+       padding: 10px;
+       font-size: 14px;
+     }
+
+     .form-textarea {
+       min-height: 100px;
+       max-height: 200px;
+     }
+
+     .modal {
+       width: 95%;
+     }
+
+     .modal-header {
+       padding: 12px;
+     }
+
+     .modal-content {
+       padding: 12px;
+       max-height: 80vh;
+     }
+
+     .provider-grid {
+       grid-template-columns: 1fr;
+     }
+
+      .provider-card {
+        padding: 12px;
+      }
+    }
+
+    /* Reminders Section Styling */
+    .reminders-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .reminders-content {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+      /* Two Column Layout - Form 30%, List 70% */
+      .reminders-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 0.35fr) minmax(0, 0.65fr);
+        gap: 24px;
+        align-items: start;
+      }
+
+     .reminder-form-section {
+       display: flex;
+       flex-direction: column;
+       gap: 16px;
+        min-width: 0;
+     }
+
+     .reminders-list-section {
+       display: flex;
+       flex-direction: column;
+       gap: 12px;
+        min-width: 0;
+     }
+
+      /* Responsive: Tablet (max-width: 1024px) - Keep 30/70 ratio */
+      @media (max-width: 1024px) {
+        .reminders-layout {
+          grid-template-columns: minmax(280px, 0.35fr) minmax(0, 0.65fr);
+          gap: 20px;
+        }
+
+        .reminder-form-card {
+          padding: 16px;
+        }
+
+        .form-title {
+          font-size: 15px;
+        }
+
+        .reminders-table {
+          min-width: 680px;
+        }
+      }
+
+     /* Responsive: Small Tablet (max-width: 768px) - Stack */
+     @media (max-width: 768px) {
+       .reminders-layout {
+         grid-template-columns: 1fr;
+         gap: 16px;
+       }
+
+        .reminders-table {
+          min-width: 620px;
+        }
+
+       .reminder-form-section {
+         gap: 12px;
+       }
+
+       .reminder-form-card {
+         padding: 14px;
+       }
+
+        .form-title {
+          font-size: 14px;
+          padding: 9px 14px;
+        }
+
+        .list-title {
+          font-size: 12px;
+          padding: 9px 14px;
+        }
+     }
+
+     /* Responsive: Mobile (max-width: 480px) - Compact */
+     @media (max-width: 480px) {
+       .reminders-layout {
+         grid-template-columns: 1fr;
+         gap: 12px;
+       }
+
+        .reminders-table {
+          min-width: 560px;
+        }
+
+       .reminder-form-section {
+         gap: 10px;
+       }
+
+       .reminder-form-card {
+         padding: 12px;
+         gap: 12px;
+       }
+
+        .form-title {
+          font-size: 13px;
+          padding: 8px 12px;
+        }
+
+        .list-title {
+          font-size: 11px;
+          padding: 8px 12px;
+        }
+     }
+
+      .list-title {
+       font-size: 14px;
+       font-weight: 700;
+       color: rgba(232, 247, 255, 0.7);
+       margin: 0;
+       background: transparent;
+       cursor: pointer;
+       transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+       letter-spacing: 0.3px;
+       position: relative;
+       display: inline-block;
+      }
+
+      .list-title:hover {
+        color: #00f0ff;
+      }
+
+      .form-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #00f0ff;
+        margin: 0;
+        background: transparent;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        letter-spacing: 0.3px;
+        position: relative;
+        display: inline-block;
+      }
+
+      .form-title:hover {
+        color: #00f0ff;
+      }
+
+      /* Section Title Wrapper */
+      .title-bg-container {
+        width: 100%;
+        padding: 0px 16px;
+        background: linear-gradient(90deg, rgba(0, 240, 255, 0.08) 0%, rgba(0, 212, 255, 0.04) 100%);
+        border-radius: 3px;
+      }
+
+      .section-title-wrapper  {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+        padding: 5px 0;
+      }
+
+      .section-title-icon {
+        font-size: 20px;
+        opacity: 0.8;
+      }
+
+      .form-title,
+      .list-title {
+        font-size: 12px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #00f0ff 5%, #00d4ff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin: 0;
+        letter-spacing: 0.5px;
+
+      }
+
+      .list-title {
+        margin: 0;
+      }
+
+      .reminder-count {
+        font-size: 12px;
+        color: rgba(232, 247, 255, 0.6);
+        font-weight: 500;
+        padding: 2px 8px;
+        background: rgba(0, 240, 255, 0.05);
+        border-radius: 12px;
+        margin-left: auto;
+      }
+
+      /* Responsive: Tablet (max-width: 768px) */
+      @media (max-width: 768px) {
+        .title-bg-container {
+          margin: -10px -14px 6px -14px;
+          padding: 6px 14px;
+        }
+
+        .section-title-wrapper {
+          gap: 8px;
+          margin-bottom: 0;
+        }
+
+        .section-title-icon {
+          font-size: 18px;
+        }
+
+        .form-title,
+        .list-title {
+          font-size: 14px;
+        }
+
+        .reminder-count {
+          font-size: 11px;
+          padding: 2px 6px;
+        }
+      }
+
+      /* Mobile: Extra Small (max-width: 480px) */
+      @media (max-width: 480px) {
+        .title-bg-container {
+          margin: -8px -12px 6px -12px;
+          padding: 6px 12px;
+        }
+
+        .section-title-wrapper {
+          gap: 6px;
+          margin-bottom: 0;
+        }
+
+        .section-title-icon {
+          font-size: 16px;
+        }
+
+        .form-title,
+        .list-title {
+          font-size: 13px;
+        }
+
+        .reminder-count {
+          font-size: 10px;
+          padding: 2px 6px;
+        }
+      }
+
+      /* Responsive: Tablet (max-width: 768px) */
+      @media (max-width: 768px) {
+        .form-title {
+          font-size: 14px;
+          padding: 10px 14px;
+        }
+
+        .list-title {
+          font-size: 12px;
+          padding: 10px 14px;
+        }
+      }
+
+      /* Responsive: Mobile (max-width: 480px) */
+      @media (max-width: 480px) {
+        .form-title {
+          font-size: 12px;
+          padding: 8px 12px;
+          border-bottom-width: 2px;
+        }
+
+        .list-title {
+          font-size: 11px;
+          padding: 8px 12px;
+          border-bottom-width: 2px;
+        }
+      }
+
+     /* Form Header with Info Icon */
+    .form-header-with-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+      gap: 12px;
+    }
+
+    .form-header-with-info .section-title-wrapper {
+      flex: 0 0 auto;
+    }
+
+    /* Right side wrapper groups info icon and actions */
+    .header-right-side {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Right side wrapper for info icon and actions */
+    .form-header-with-info > .info-icon-container,
+    .form-header-with-info > .title-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .label-with-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Small Info Icon (inline with label) */
+    .small-info-icon-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .small-info-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(0, 240, 255, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(0, 240, 255, 0.5);
+      cursor: help;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .small-info-icon:hover {
+      border-color: rgba(0, 240, 255, 0.7);
+      color: #00f0ff;
+      background: rgba(0, 240, 255, 0.08);
+    }
+
+    .small-info-tooltip {
+      display: none;
+      position: absolute;
+      top: -40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 10, 18, 0.98);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-width: 160px;
+      font-size: 11px;
+      color: rgba(232, 247, 255, 0.8);
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0, 240, 255, 0.08);
+      animation: slideInDown 0.2s ease;
+      white-space: nowrap;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .small-info-icon-container:hover .small-info-tooltip {
+      display: block;
+    }
+
+    @keyframes slideInDown {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(5px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    .info-icon-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .info-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(0, 240, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      color: rgba(0, 240, 255, 0.6);
+      cursor: help;
+      transition: all 0.3s ease;
+    }
+
+    .info-icon:hover {
+      border-color: rgba(0, 240, 255, 0.6);
+      color: #00f0ff;
+      background: rgba(0, 240, 255, 0.1);
+    }
+
+    /* Title Actions Container */
+    .title-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .title-actions .btn-small {
+      padding: 6px 12px;
+      font-size: 12px;
+      height: auto;
+      width: auto;
+      min-width: auto;
+    }
+
+    .info-tooltip {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 8px;
+      background: rgba(10, 10, 18, 0.98);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-radius: 10px;
+      padding: 12px 14px;
+      min-width: 280px;
+      font-size: 11px;
+      color: rgba(232, 247, 255, 0.7);
+      z-index: 1000;
+      box-shadow: 0 4px 16px rgba(0, 240, 255, 0.1);
+      animation: slideInUp 0.2s ease;
+    }
+
+    .info-icon-container:hover .info-tooltip {
+      display: block;
+    }
+
+    .info-tooltip strong {
+      display: block;
+      color: #00f0ff;
+      margin-bottom: 8px;
+    }
+
+    .info-tooltip ul {
+      margin: 0;
+      padding-left: 16px;
+      list-style: disc;
+    }
+
+    .info-tooltip li {
+      margin: 4px 0;
+      line-height: 1.4;
+    }
+
+    @keyframes slideInUp {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .reminder-form-card {
+      background: rgba(0, 240, 255, 0.04);
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: fit-content;
+      position: sticky;
+      top: 20px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .time-range {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .time-separator {
+      color: rgba(232, 247, 255, 0.5);
+      font-size: 12px;
+    }
+
+    .form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: rgba(232, 247, 255, 0.7);
+      font-size: 13px;
+    }
+
+    .form-checkbox input {
+      cursor: pointer;
+    }
+
+
+    /* Optional Fields Section */
+    .optional-fields-section {
+      background: rgba(0, 200, 100, 0.05);
+      border: 1px solid rgba(0, 200, 100, 0.15);
+      border-radius: 10px;
+      padding: 16px;
+      margin: 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .optional-header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(0, 200, 100, 0.1);
+    }
+
+    .optional-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #00d4ff;
+      margin: 0;
+    }
+
+    .optional-hint {
+      font-size: 11px;
+      color: rgba(232, 247, 255, 0.5);
+      margin: 0;
+    }
+
+    .optional-field-toggle {
+      display: flex;
+      padding: 8px 0;
+    }
+
+    .toggle-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: rgba(232, 247, 255, 0.7);
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .toggle-checkbox input {
+      cursor: pointer;
+      accent-color: #00f0ff;
+    }
+
+    .toggle-checkbox:hover {
+      color: #e8f7ff;
+    }
+
+    /* Toggle label with info icon */
+    .toggle-label-with-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: rgba(232, 247, 255, 0.7);
+      font-size: 12px;
+      user-select: none;
+      position: relative;
+    }
+
+    .toggle-label-with-info:hover {
+      color: #e8f7ff;
+    }
+
+    .toggle-label-with-info .small-info-icon-container {
+      margin-left: 4px;
+    }
+
+    .optional-field-input {
+      padding-left: 8px;
+      border-left: 2px solid rgba(0, 200, 100, 0.2);
+      margin: 0;
+    }
+
+      /* Reminders Table Styles */
+      .reminders-table-wrapper {
+        overflow-x: auto;
+        border: 1px solid rgba(0, 240, 255, 0.15);
+        border-radius: 10px;
+        background: rgba(0, 240, 255, 0.02);
+      }
+
+      .reminders-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 13px;
+      }
+
+      .reminders-table thead {
+        background: rgba(0, 240, 255, 0.08);
+        border-bottom: 2px solid rgba(0, 240, 255, 0.15);
+      }
+
+      .reminders-table thead th {
+        padding: 14px 12px;
+        text-align: center;
+        font-weight: 700;
+        color: #00f0ff;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        white-space: nowrap;
+        user-select: none;
+      }
+
+      .reminders-table tbody tr {
+        border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+        transition: all 0.25s ease;
+        background: rgba(10, 10, 18, 0.3);
+      }
+
+      .reminders-table tbody tr:hover {
+        background: rgba(0, 240, 255, 0.06);
+        border-bottom-color: rgba(0, 240, 255, 0.2);
+      }
+
+      .reminder-row.disabled-row {
+        opacity: 0.5;
+      }
+
+      .reminders-table tbody td {
+        padding: 12px;
+        color: rgba(232, 247, 255, 0.75);
+        vertical-align: middle;
+      }
+
+      .col-email {
+        width: 25%;
+        min-width: 180px;
+      }
+
+      .col-status {
+        width: 15%;
+        min-width: 100px;
+      }
+
+      .col-schedule {
+        width: 22%;
+        min-width: 140px;
+      }
+
+      .col-window {
+        width: 18%;
+        min-width: 120px;
+      }
+
+      .col-max {
+        width: 10%;
+        min-width: 80px;
+        text-align: center;
+      }
+
+      .col-actions {
+        width: 10%;
+        min-width: 80px;
+        text-align: center;
+      }
+
+      .email-cell {
+        background: linear-gradient(135deg, #00f0ff 0%, #00d4ff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 600;
+        word-break: break-word;
+      }
+
+      .schedule-text,
+      .window-text {
+        font-size: 12px;
+        color: rgba(232, 247, 255, 0.7);
+      }
+
+      .max-reminders {
+        display: inline-block;
+        background: rgba(0, 200, 100, 0.1);
+        color: #00c864;
+        border: 1px solid rgba(0, 200, 100, 0.2);
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12px;
+      }
+
+      .actions-group {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+
+      .status-badge.active {
+        background: rgba(0, 200, 100, 0.15);
+        color: #00c864;
+        border: 1px solid rgba(0, 200, 100, 0.3);
+      }
+
+      .status-badge.inactive {
+        background: rgba(255, 180, 0, 0.15);
+        color: #ffb400;
+        border: 1px solid rgba(255, 180, 0, 0.3);
+      }
+
+      /* Responsive: Tablet (max-width: 1024px) */
+      @media (max-width: 1024px) {
+        .reminders-table thead th {
+          padding: 12px 10px;
+          font-size: 11px;
+        }
+
+        .reminders-table tbody td {
+          padding: 10px 8px;
+          font-size: 12px;
+        }
+
+        .col-email { width: 20%; min-width: 140px; }
+        .col-status { width: 12%; min-width: 80px; }
+        .col-schedule { width: 20%; min-width: 120px; }
+        .col-window { width: 16%; min-width: 100px; }
+        .col-max { width: 12%; min-width: 70px; }
+        .col-actions { width: 10%; min-width: 70px; }
+
+      }
+
+      /* Responsive: Small Tablet (max-width: 768px) */
+      @media (max-width: 768px) {
+        .reminders-table-wrapper {
+          border-radius: 8px;
+        }
+
+        .reminders-table thead th {
+          padding: 10px 6px;
+          font-size: 10px;
+        }
+
+        .reminders-table tbody td {
+          padding: 8px 6px;
+          font-size: 11px;
+        }
+
+        .col-email { width: 18%; min-width: 100px; }
+        .col-status { width: 10%; min-width: 60px; }
+        .col-schedule { width: 18%; min-width: 100px; }
+        .col-window { width: 14%; min-width: 80px; }
+        .col-max { width: 10%; min-width: 50px; }
+        .col-actions { width: 12%; min-width: 60px; }
+
+        .email-cell {
+          font-size: 11px;
+        }
+
+        .schedule-text,
+        .window-text {
+          font-size: 10px;
+        }
+
+        .actions-group {
+          gap: 4px;
+        }
+
+      }
+
+      /* Responsive: Mobile (max-width: 480px) */
+      @media (max-width: 480px) {
+        .reminders-table-wrapper {
+          border-radius: 6px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .reminders-table {
+          font-size: 11px;
+        }
+
+        .reminders-table thead th {
+          padding: 8px 4px;
+          font-size: 9px;
+          letter-spacing: 0.2px;
+        }
+
+        .reminders-table tbody td {
+          padding: 6px 4px;
+          font-size: 10px;
+        }
+
+        .col-email { width: 25%; min-width: 90px; }
+        .col-status { width: 12%; min-width: 50px; }
+        .col-schedule { width: 20%; min-width: 90px; }
+        .col-window { width: 18%; min-width: 70px; }
+        .col-max { width: 10%; min-width: 40px; }
+        .col-actions { width: 15%; min-width: 50px; }
+
+        .email-cell {
+          font-size: 10px;
+        }
+
+        .schedule-text,
+        .window-text {
+          font-size: 9px;
+        }
+
+        .max-reminders {
+          padding: 3px 6px;
+          font-size: 10px;
+        }
+
+        .actions-group {
+          gap: 3px;
+        }
+
+        .btn-small {
+          width: auto;
+          height: 28px;
+          font-size: 11px;
+        }
+
+        .status-badge {
+          font-size: 10px;
+          padding: 3px 8px;
+        }
+      }
+
+    .btn-small {
+      width: 32px;
+      height: 32px;
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      background: transparent;
+      color: rgba(232, 247, 255, 0.6);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s ease;
+    }
+
+    .btn-small:hover {
+      border-color: rgba(0, 240, 255, 0.3);
+      color: #e8f7ff;
+    }
+
+    .btn-edit:hover {
+      background: rgba(0, 240, 255, 0.1);
+    }
+
+    .btn-delete:hover {
+      border-color: rgba(255, 100, 100, 0.3);
+      color: #ff6464;
+      background: rgba(255, 100, 100, 0.1);
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-secondary {
+      flex: 1;
+      padding: 12px 20px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      background: transparent;
+      color: rgba(232, 247, 255, 0.6);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .btn-secondary:hover {
+      border-color: rgba(0, 240, 255, 0.3);
+      background: rgba(0, 240, 255, 0.08);
+      color: #e8f7ff;
+    }
+
+    /* Reminders Tab Styles */
+    .reminders-content {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      overflow-y: auto;
+      max-height: calc(100vh - 280px);
+      padding-right: 8px;
+    }
+
+    .reminders-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .reminders-content::-webkit-scrollbar-track {
+      background: rgba(0, 240, 255, 0.04);
+      border-radius: 3px;
+    }
+
+    .reminders-content::-webkit-scrollbar-thumb {
+      background: rgba(0, 240, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    .reminders-content::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 240, 255, 0.35);
+    }
+
+    .reminder-form-container {
+      background: rgba(0, 240, 255, 0.02);
+      border: 1px solid rgba(0, 240, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .new-reminder-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+    }
+
+    .new-reminder-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #00f0ff;
+      margin: 0;
+      letter-spacing: 0.3px;
+    }
+
+    .new-reminder-header .form-actions {
+      margin-top: 0;
+    }
+
+    .btn-small {
+      padding: 8px 16px;
+      font-size: 12px;
+      height: auto;
+      min-width: auto;
+    }
+
+    .btn-help {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 50%;
+      background: transparent;
+      color: rgba(232, 247, 255, 0.6);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-help:hover {
+      border-color: rgba(0, 240, 255, 0.4);
+      background: rgba(0, 240, 255, 0.08);
+      color: #00f0ff;
+    }
+
+    .form-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(232, 247, 255, 0.85);
+      margin-bottom: 8px;
+    }
+
+    .required {
+      color: #ff6464;
+    }
+
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      border-radius: 50%;
+      color: rgba(0, 240, 255, 0.6);
+      font-size: 11px;
+      cursor: help;
+    }
+
+    .optional-settings {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(0, 240, 255, 0.1);
+    }
+
+    .optional-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(0, 240, 255, 0.8);
+      margin: 0 0 4px 0;
+    }
+
+    .optional-description {
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.5);
+      margin: 0 0 16px 0;
+    }
+
+    .checkbox-group {
+      margin-bottom: 16px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      margin-bottom: 8px;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: #00f0ff;
+    }
+
+    .checkbox-text {
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.75);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .conditional-field {
+      margin-left: 26px;
+      margin-top: 8px;
+      margin-bottom: 12px;
+    }
+
+    .time-input-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .time-input {
+      flex: 1;
+    }
+
+    .time-input input {
+      width: 100%;
+    }
+
+    .time-separator {
+      color: rgba(232, 247, 255, 0.5);
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      margin-top: 20px;
+    }
+
+    .configured-reminders {
+      margin-top: 16px;
+      background: rgba(0, 240, 255, 0.02);
+      border: 1px solid rgba(0, 240, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .reminders-section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.15);
+    }
+
+    .reminders-section-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: rgba(0, 240, 255, 0.9);
+      margin: 0;
+      letter-spacing: 0.3px;
+    }
+
+    .reminders-count {
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.5);
+    }
+
+    .reminders-table-container {
+      border: 1px solid rgba(0, 240, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .reminders-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: transparent;
+    }
+
+    .reminders-table thead {
+      background: rgba(0, 240, 255, 0.04);
+      border-bottom: 1px solid rgba(0, 240, 255, 0.15);
+    }
+
+    .reminders-table th {
+      padding: 14px 12px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #00f0ff;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .reminders-table th:nth-child(1) { width: 25%; } /* EMAIL */
+    .reminders-table th:nth-child(2) { width: 20%; } /* STATUS */
+    .reminders-table th:nth-child(3) { width: 25%; } /* SCHEDULE */
+    .reminders-table th:nth-child(4) { width: 15%; } /* MAX REMINDERS */
+
+    .reminders-table td {
+      padding: 14px 12px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.08);
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.8);
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .reminders-table td:nth-child(1) { width: 25%; } /* EMAIL */
+    .reminders-table td:nth-child(2) { width: 20%; } /* STATUS */
+    .reminders-table td:nth-child(3) { width: 25%; } /* SCHEDULE */
+    .reminders-table td:nth-child(4) { width: 15%; } /* MAX REMINDERS */
+
+    .reminders-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .reminders-table tbody tr:hover {
+      background: rgba(0, 240, 255, 0.03);
+    }
+
+    .email-cell {
+      color: #00f0ff;
+      font-weight: 500;
+    }
+
+    .status-cell {
+      /* styling handled by parent */
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .status-badge.active {
+      background: rgba(0, 200, 100, 0.15);
+      color: #00c864;
+      border: 1px solid rgba(0, 200, 100, 0.3);
+    }
+
+    .status-badge.inactive {
+      background: rgba(255, 150, 100, 0.15);
+      color: #ff9664;
+      border: 1px solid rgba(255, 150, 100, 0.3);
+    }
+
+    .schedule-cell {
+      /* styling handled by parent */
+    }
+
+    .window-cell {
+      /* styling handled by parent */
+    }
+
+    .max-cell {
+      /* styling handled by parent */
+    }
+
+    .reminders-table .actions-cell {
+      display: flex !important;
+      gap: 8px !important;
+      justify-content: center !important;
+      align-items: center !important;
+      padding: 14px 12px !important;
+      text-align: center !important;
+      vertical-align: middle !important;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.08) !important;
+      font-size: 12px !important;
+      color: rgba(232, 247, 255, 0.8) !important;
+    }
+
+    .action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+    }
+
+    .action-btn svg {
+      stroke-width: 2;
+      flex-shrink: 0;
+    }
+
+    .action-btn.edit-btn {
+      color: rgba(0, 240, 255, 0.7);
+    }
+
+    .action-btn.edit-btn:hover {
+      background: rgba(0, 240, 255, 0.15);
+      color: #00f0ff;
+    }
+
+    .action-btn.delete-btn {
+      color: rgba(255, 100, 100, 0.7);
+    }
+
+    .action-btn.delete-btn:hover {
+      background: rgba(255, 100, 100, 0.15);
+      color: #ff6464;
+    }
+
+    .no-reminders {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+      color: rgba(232, 247, 255, 0.5);
+      font-size: 14px;
+    }
+
+    .no-reminders p {
+      margin: 0;
+    }
+
+    /* Contact List Select Styling */
+    .conditional-field select {
+      width: 100%;
+      padding: 12px 36px 12px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      background: rgba(0, 240, 255, 0.04) url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(0,240,255,0.6)'%3e%3cpath d='M6 9l6 6 6-6'/%3e%3c/svg%3e") no-repeat right 10px center;
+      background-size: 1.5em 1.5em;
+      color: #e8f7ff;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      appearance: none;
+      transition: all 0.2s ease;
+    }
+
+    .conditional-field select:hover {
+      border-color: rgba(0, 240, 255, 0.35);
+      background-color: rgba(0, 240, 255, 0.06);
+    }
+
+    .conditional-field select:focus {
+      outline: none;
+      border-color: rgba(0, 240, 255, 0.5);
+      background-color: rgba(0, 240, 255, 0.1);
+      box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.1);
+    }
+
+    .conditional-field select option {
+      background: rgba(10, 10, 18, 0.95);
+      color: rgba(232, 247, 255, 0.9);
+      padding: 10px;
+      border: none;
+    }
+
+    .conditional-field select option:hover {
+      background: rgba(0, 240, 255, 0.2);
+      color: #00f0ff;
+    }
+
+    .conditional-field select option:checked {
+      background: linear-gradient(rgba(0, 240, 255, 0.2), rgba(0, 240, 255, 0.2));
+      color: #00f0ff;
+    }
+
+    /* Toggle Switch for Enable/Disable */
+    .toggle-switch {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle-switch input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      background-color: rgba(255, 100, 100, 0.2);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 100, 100, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background-color: #ff6464;
+      left: 2px;
+      top: 2px;
+      transition: all 0.3s ease;
+    }
+
+    .toggle-switch input[type="checkbox"]:checked + .toggle-slider {
+      background-color: rgba(0, 200, 100, 0.2);
+      border-color: rgba(0, 200, 100, 0.3);
+    }
+
+    .toggle-switch input[type="checkbox"]:checked + .toggle-slider::before {
+      background-color: #00c864;
+      transform: translateX(20px);
+    }
+
+    .toggle-label {
+      font-size: 12px;
+      color: rgba(232, 247, 255, 0.75);
+      min-width: 60px;
+    }
+ </style>
 

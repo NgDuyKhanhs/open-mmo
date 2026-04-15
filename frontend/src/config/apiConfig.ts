@@ -25,19 +25,22 @@ export const API_CONFIG = {
     LOGOUT: `${API_BASE_URL}${API_BASE_PATH}/auth/logout`,
   },
 
-  // Gmail endpoints
-  GMAIL: {
-    BASE: `${API_BASE_URL}${API_BASE_PATH}/gmail`,
-    CONNECT_START: `${API_BASE_URL}${API_BASE_PATH}/gmail/connect/start`,
-    CONNECT_CALLBACK: `${API_BASE_URL}${API_BASE_PATH}/gmail/connect/callback`,
-    STATUS: `${API_BASE_URL}${API_BASE_PATH}/gmail/status`,
-    BOT_ENABLE: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/enable`,
-    BOT_DISABLE: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/disable`,
-    BOT_CONFIG: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/config`,
-    BOT_PROMPT: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/prompt`,
-    MAILBOX: `${API_BASE_URL}${API_BASE_PATH}/gmail/mailbox`,
-  },
-}
+   // Gmail endpoints
+   GMAIL: {
+     BASE: `${API_BASE_URL}${API_BASE_PATH}/gmail`,
+     CONNECT_START: `${API_BASE_URL}${API_BASE_PATH}/gmail/connect/start`,
+     CONNECT_CALLBACK: `${API_BASE_URL}${API_BASE_PATH}/gmail/connect/callback`,
+     STATUS: `${API_BASE_URL}${API_BASE_PATH}/gmail/status`,
+     BOT_ENABLE: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/enable`,
+     BOT_DISABLE: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/disable`,
+     BOT_CONFIG: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/config`,
+     BOT_PROMPT: `${API_BASE_URL}${API_BASE_PATH}/gmail/bot/prompt`,
+     MAILBOX: `${API_BASE_URL}${API_BASE_PATH}/gmail/mailbox`,
+     REMINDERS: `${API_BASE_URL}${API_BASE_PATH}/gmail/reminders`,
+     SEND_REPLY: `${API_BASE_URL}${API_BASE_PATH}/gmail/send-reply`,
+     CONTACTS: `${API_BASE_URL}${API_BASE_PATH}/gmail/contacts`,
+   },
+ }
 
-export default API_CONFIG
+ export default API_CONFIG
 

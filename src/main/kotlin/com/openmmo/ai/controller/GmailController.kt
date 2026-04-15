@@ -2,11 +2,12 @@ package com.openmmo.ai.controller
 
 import com.openmmo.ai.dto.GmailStatusResponse
 import com.openmmo.ai.dto.ConnectGmailResponse
-import com.openmmo.ai.dto.MailboxItemResponse
+import com.openmmo.ai.dto.ReminderConfigDto
 import com.openmmo.ai.service.IGmailOAuthService
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailBotService
 import com.openmmo.ai.service.IGmailAutoReplyService
+import com.openmmo.ai.service.IReminderService
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -19,7 +20,8 @@ class GmailController(
     private val oauthService: IGmailOAuthService,
     private val apiService: IGmailApiService,
     private val botService: IGmailBotService,
-    private val autoReplyService: IGmailAutoReplyService
+    private val autoReplyService: IGmailAutoReplyService,
+    private val reminderService: IReminderService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(GmailController::class.java)
@@ -83,11 +85,8 @@ class GmailController(
         authentication: Authentication
     ): ResponseEntity<Map<String, String>> {
         val userId = authentication.name
-        val triggerSubject = request["triggerSubject"] ?: return ResponseEntity.badRequest()
-            .body(mapOf(
-                "status" to "error",
-                "message" to "Missing triggerSubject"
-            ))
+        // triggerSubject is now optional - can be empty string to reply to ALL emails
+        val triggerSubject = request["triggerSubject"] ?: "" // Allow empty string
 
         logger.info("Updating Gmail bot config for user: $userId")
         val result = botService.updateConfig(userId, triggerSubject)
@@ -194,6 +193,70 @@ class GmailController(
         logger.info("Setting AI provider for user: $userId to: $provider")
         val result = botService.setAiProvider(userId, provider)
         return ResponseEntity.ok(result)
+    }
+
+    // ============ REMINDER ENDPOINTS ============
+
+    @GetMapping("/contacts")
+    fun getContacts(authentication: Authentication): ResponseEntity<Map<String, Any>> {
+        val userId = authentication.name
+        logger.info("Getting contacts for user: $userId")
+        val contacts = apiService.getContactsList(userId)
+        return ResponseEntity.ok(mapOf("contacts" to contacts))
+    }
+
+    @GetMapping("/reminders")
+    fun getReminders(authentication: Authentication): ResponseEntity<Map<String, Any>> {
+        val userId = authentication.name
+        logger.info("Getting reminders for user: $userId")
+        val reminders = reminderService.getReminders(userId)
+        return ResponseEntity.ok(mapOf("reminders" to reminders))
+    }
+
+    @PostMapping("/reminders")
+    fun createReminder(
+        @RequestBody dto: ReminderConfigDto,
+        authentication: Authentication
+    ): ResponseEntity<Map<String, String>> {
+        val userId = authentication.name
+        logger.info("Creating reminder for user: $userId, contact: ${dto.contactEmail}")
+        val result = reminderService.saveReminder(userId, dto)
+        return if (result["status"] == "error") {
+            ResponseEntity.badRequest().body(result)
+        } else {
+            ResponseEntity.ok(result)
+        }
+    }
+
+    @PutMapping("/reminders/{contactEmail}")
+    fun updateReminder(
+        @PathVariable contactEmail: String,
+        @RequestBody dto: ReminderConfigDto,
+        authentication: Authentication
+    ): ResponseEntity<Map<String, String>> {
+        val userId = authentication.name
+        logger.info("Updating reminder for user: $userId, contact: $contactEmail")
+        val result = reminderService.saveReminder(userId, dto)
+        return if (result["status"] == "error") {
+            ResponseEntity.badRequest().body(result)
+        } else {
+            ResponseEntity.ok(result)
+        }
+    }
+
+    @DeleteMapping("/reminders/{contactEmail}")
+    fun deleteReminder(
+        @PathVariable contactEmail: String,
+        authentication: Authentication
+    ): ResponseEntity<Map<String, String>> {
+        val userId = authentication.name
+        logger.info("Deleting reminder for user: $userId, contact: $contactEmail")
+        val result = reminderService.deleteReminder(userId, contactEmail)
+        return if (result["status"] == "error") {
+            ResponseEntity.badRequest().body(result)
+        } else {
+            ResponseEntity.ok(result)
+        }
     }
 }
 
