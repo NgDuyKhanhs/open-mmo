@@ -934,18 +934,18 @@
                        <div class="label-row">
                          <label class="form-label">
                            Subject Keyword                     <span class="optional-badge">(Optional)</span>
-                           <span v-if="!configSubject.trim()" class="warning-icon" data-tooltip="Reply to ALL mode: 13 skip rules for auto-generated, mailing lists & promotional emails">
+                           <span v-if="!configSubject.trim()" class="warning-icon" data-tooltip="No keyword set, bot will reply to all">
                              <AlertTriangle size="16" />
                            </span>
 
                          </label>
                        </div>
-                       <p class="optional-description">Filter by keyword or reply to all emails</p>
+                       <p class="optional-description">Reply with keyword</p>
                     </div>
                     <input
                       v-model="configSubject"
                       type="text"
-                      placeholder="e.g., youtube, shopify, contact"
+                      placeholder="e.g., invoice, urgent, follow-up"
                       class="form-input"
                     />
                   </div>
@@ -4998,7 +4998,85 @@ Best regards</div>
           height: 24px;
         }
 
+        /* Responsive tooltip for mobile */
+        .warning-icon[data-tooltip]:hover::after {
+          white-space: normal;
+          width: 120px;
+          bottom: auto;
+          top: 120%;
+          font-size: 11px;
+          padding: 6px 10px;
+        }
+
+        .warning-icon[data-tooltip]:hover::before {
+          bottom: auto;
+          top: 110%;
+          border: 5px solid transparent;
+          border-bottom-color: rgba(255, 149, 0, 0.95);
+        }
       }
+
+    .warning-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 6px;
+      color: #ff9500;
+      cursor: help;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .warning-icon:hover {
+      color: #ffb340;
+      transform: scale(1.1);
+    }
+
+    /* Tooltip styling */
+    .warning-icon[data-tooltip] {
+      position: relative;
+    }
+
+    .warning-icon[data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 149, 0, 0.95);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: nowrap;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      pointer-events: none;
+      animation: tooltipFadeIn 0.2s ease;
+    }
+
+    .warning-icon[data-tooltip]:hover::before {
+      content: '';
+      position: absolute;
+      bottom: 115%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: rgba(255, 149, 0, 0.95);
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    @keyframes tooltipFadeIn {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
 
     .btn-small {
       width: 32px;
