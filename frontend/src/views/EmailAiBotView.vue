@@ -93,6 +93,7 @@
         enabled: boolean
         afterInactive: number // minutes
         maxReminders: number
+        sentCount: number // track reminders sent
       }
 
         const reminders = ref<ReminderConfig[]>([])
@@ -103,6 +104,7 @@
           enabled: true,
           afterInactive: 60,
           maxReminders: 5,
+          sentCount: 0,
         })
        const editingReminderId = ref<string | null>(null)
        const isSavingReminder = ref(false)
@@ -402,14 +404,27 @@
          try {
            if (!authStore.accessToken) return
            const remindersList = await getReminders(authStore.accessToken)
-           reminders.value = remindersList || []
-         } catch (err) {
-           console.error('Failed to load reminders:', err)
-           toast.error('Failed to load reminders')
-         }
-       }
+            reminders.value = remindersList || []
+          } catch (err) {
+            console.error('Failed to load reminders:', err)
+            toast.error('Failed to load reminders')
+          }
+        }
 
-       // 🆕 Load contacts list
+        // 🆕 Auto-disable reminders when limit reached
+        watch(
+          reminders,
+          (updatedReminders) => {
+            updatedReminders.forEach((reminder) => {
+              if (reminder.enabled && reminder.sentCount >= reminder.maxReminders) {
+                reminder.enabled = false
+              }
+            })
+          },
+          { deep: true }
+        )
+
+        // 🆕 Load contacts list
        const loadContacts = async () => {
          try {
            if (!authStore.accessToken) return
@@ -448,13 +463,14 @@
           try {
             if (!authStore.accessToken) return
 
-              // Build reminder object - send exactly what user configured
-              const reminderData: ReminderConfig = {
-                 contactEmail: visibleOptionalFields.value.contactEmail ? newReminder.value.contactEmail : '',
-                 enabled: visibleOptionalFields.value.enabled ? newReminder.value.enabled : true,
-                 afterInactive: newReminder.value.afterInactive,
-                 maxReminders: visibleOptionalFields.value.maxReminders ? newReminder.value.maxReminders : 5,
-               }
+               // Build reminder object - send exactly what user configured
+               const reminderData: ReminderConfig = {
+                  contactEmail: visibleOptionalFields.value.contactEmail ? newReminder.value.contactEmail : '',
+                  enabled: visibleOptionalFields.value.enabled ? newReminder.value.enabled : true,
+                  afterInactive: newReminder.value.afterInactive,
+                  maxReminders: visibleOptionalFields.value.maxReminders ? newReminder.value.maxReminders : 5,
+                  sentCount: newReminder.value.sentCount || 0,
+                }
 
            if (editingReminderId.value) {
              // Update existing - use original contactEmail as the path parameter
@@ -551,15 +567,16 @@
         }
 
        // 🆕 Reset reminder form
-        const resetReminderForm = () => {
-          newReminder.value = {
-            contactEmail: '',
-            enabled: true,
-            afterInactive: 60,
-            maxReminders: 5,
-          }
-          editingReminderId.value = null
-          showReminderForm.value = false
+         const resetReminderForm = () => {
+           newReminder.value = {
+             contactEmail: '',
+             enabled: true,
+             afterInactive: 60,
+             maxReminders: 5,
+             sentCount: 0,
+           }
+           editingReminderId.value = null
+           showReminderForm.value = false
           // Reset optional fields visibility
           visibleOptionalFields.value = {
             contactEmail: false,
@@ -910,44 +927,49 @@
                   <div class="tab-divider"></div>
                 </div>
 
-               <div class="config-form">
-                <!-- Trigger Subject -->
-                <div class="form-section">
-                  <label class="form-label">Subject Keyword <span class="optional-badge">(Optional)</span></label>
-                  <p class="form-description">
-                    Leave empty to reply to ALL emails, or enter a keyword to filter by subject.
-                    <strong>NEW:</strong> Automatic rules will skip attachments, promotional emails, and system notifications to save quota.
-                  </p>
-                  <input
-                    v-model="configSubject"
-                    type="text"
-                    placeholder="e.g., youtube, shopify, contact (or leave empty for all emails)"
-                    class="form-input"
-                  />
-                  <div v-if="!configSubject.trim()" class="info-box">
-                    ⚠️ <strong>Reply to ALL mode:</strong> Bot will reply to all emails but skip auto-generated, mailing lists, promotional, and low-quality emails (13 skip rules).
-                  </div>
-                </div>
+                <div class="config-form">
+                 <!-- Trigger Subject -->
+                  <div class="optional-box">
+                    <div class="optional-box-header">
+                       <div class="label-row">
+                         <label class="form-label">
+                           Subject Keyword                     <span class="optional-badge">(Optional)</span>
+                           <span v-if="!configSubject.trim()" class="warning-icon" data-tooltip="Reply to ALL mode: 13 skip rules for auto-generated, mailing lists & promotional emails">
+                             <AlertTriangle size="16" />
+                           </span>
 
-                <div class="form-divider"></div>
-
-                <!-- Custom Prompt -->
-                <div class="form-section">
-                  <div class="label-row">
-                    <label class="form-label">Custom Prompt (Optional)</label>
-                    <button @click="showPromptHelp = true" class="help-button" title="View examples">
-                      <HelpCircle size="16" />
-                    </button>
+                         </label>
+                       </div>
+                       <p class="optional-description">Filter by keyword or reply to all emails</p>
+                    </div>
+                    <input
+                      v-model="configSubject"
+                      type="text"
+                      placeholder="e.g., youtube, shopify, contact"
+                      class="form-input"
+                    />
                   </div>
-                  <p class="form-description">
-                    Customize how AI responds
-                  </p>
-                  <textarea
-                    v-model="configPrompt"
-                    placeholder="Write a custom prompt for AI responses..."
-                    class="form-textarea"
-                  ></textarea>
-                </div>
+
+
+                 <!-- Custom Prompt -->
+                  <div class="optional-box">
+                    <div class="optional-box-header">
+                      <div class="label-row">
+                        <label class="form-label">Custom Prompt <span class="optional-badge">(Optional)</span></label>
+                        <button @click="showPromptHelp = true" class="help-button" title="View examples">
+                          <HelpCircle size="16" />
+                        </button>
+                      </div>
+                      <p class="optional-description">
+                        Customize how AI responds
+                      </p>
+                    </div>
+                    <textarea
+                      v-model="configPrompt"
+                      placeholder="Write a custom prompt for AI responses..."
+                      class="form-textarea"
+                    ></textarea>
+                  </div>
 
                 <!-- Save Button -->
                 <div class="form-actions">
@@ -956,7 +978,7 @@
                     class="btn btn-primary btn-full"
                     :disabled="isSaving || !hasConfigChanged"
                   >
-                    {{ isSaving ? 'Saving...' : 'Save Configuration' }}
+                    {{ isSaving ? 'Saving...' : 'Save' }}
                   </button>
                  </div>
                </div>
@@ -1092,11 +1114,12 @@
                          <div class="new-reminder-header">
                            <h4 class="new-reminder-title">New Reminder</h4>
                            <div class="form-actions" style="margin-top: 0;">
-                             <button @click="saveReminder" class="btn btn-small" :disabled="isSavingReminder">
-                               {{ isSavingReminder ? 'Saving...' : 'Save' }}
+                             <button @click="saveReminder" class="btn btn-small icon-button" :disabled="isSavingReminder" title="Save reminder">
+                               <CheckCircle2 size="24" />
                              </button>
-                             <button @click="toggleReminderForm" class="btn btn-secondary btn-small">Cancel</button>
-                             <button class="btn-help" title="Help">?</button>
+                             <button @click="toggleReminderForm" class="btn btn-secondary btn-small icon-button" title="Cancel">
+                               <X size="24" />
+                             </button>
                            </div>
                          </div>
 
@@ -1187,47 +1210,54 @@
                            <span class="reminders-count">({{ reminders.length }})</span>
                          </div>
 
-                         <div v-if="reminders.length > 0" class="reminders-table-container">
+                          <div v-if="reminders.length > 0" class="reminders-table-wrapper">
                             <table class="reminders-table">
                               <thead>
                                 <tr>
-                                  <th>EMAIL</th>
-                                  <th>STATUS</th>
-                                  <th>SCHEDULE</th>
-                                  <th>MAX REMINDERS</th>
-                                  <th>ACTIONS</th>
+                                  <th class="col-email">EMAIL</th>
+                                  <th class="col-status">STATUS</th>
+                                  <th class="col-schedule">SCHEDULE</th>
+                                  <th class="col-max">REMINDERS</th>
+                                  <th class="col-actions">ACTIONS</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 <tr v-for="reminder in reminders" :key="reminder.contactEmail">
-                                  <td class="email-cell">{{ reminder.contactEmail || 'All Emails' }}</td>
-                                  <td class="status-cell">
-                                    <span :class="['status-badge', reminder.enabled ? 'active' : 'inactive']">
+                                  <td class="email-cell col-email" data-label="Email">{{ reminder.contactEmail || 'All Emails' }}</td>
+                                  <td class="status-cell col-status" data-label="Status">
+                                    <span :class="['status-badge', reminder.enabled ? 'active' : 'inactive', reminder.sentCount >= reminder.maxReminders ? 'limit-reached' : '']">
                                       {{ reminder.enabled ? '● Active' : '● Inactive' }}
+                                      <span v-if="reminder.sentCount >= reminder.maxReminders" class="limit-badge">(Limit Reached)</span>
                                     </span>
                                   </td>
-                                  <td class="schedule-cell">Every {{ reminder.afterInactive }}m</td>
-                                  <td class="max-cell">{{ reminder.maxReminders }}</td>
-                                   <td class="actions-cell">
-                                    <button
-                                      @click="editReminder(reminder)"
-                                      class="action-btn edit-btn"
-                                      title="Edit"
-                                    >
-                                      <Edit :size="16" />
-                                    </button>
-                                    <button
-                                      @click="showDeleteConfirmPopup(reminder.contactEmail)"
-                                      class="action-btn delete-btn"
-                                      title="Delete"
-                                    >
-                                      <Trash :size="16" />
-                                    </button>
+                                  <td class="schedule-cell col-schedule" data-label="Schedule">Every {{ reminder.afterInactive }}m</td>
+                                  <td class="max-cell col-max" data-label="Reminders">
+                                    <span :class="['reminders-progress', reminder.sentCount >= reminder.maxReminders ? 'exhausted' : '']">
+                                      {{ reminder.sentCount }}/{{ reminder.maxReminders }}
+                                    </span>
                                   </td>
-                               </tr>
-                             </tbody>
-                           </table>
-                         </div>
+                                   <td class="actions-cell col-actions" data-label="Actions" style="width:100%">
+                                     <div class="actions-group">
+                                       <button
+                                         @click="editReminder(reminder)"
+                                         class="action-btn edit-btn"
+                                         title="Edit"
+                                       >
+                                         <Edit :size="16" />
+                                       </button>
+                                       <button
+                                         @click="showDeleteConfirmPopup(reminder.contactEmail)"
+                                         class="action-btn delete-btn"
+                                         title="Delete"
+                                       >
+                                         <Trash :size="16" />
+                                       </button>
+                                     </div>
+                                   </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
                          <div v-else class="no-reminders">
                            <p>No reminders configured yet</p>
                          </div>
@@ -1547,6 +1577,36 @@ Best regards</div>
     background: rgba(0, 200, 100, 0.15);
     color: #00c864;
     border: 1px solid rgba(0, 200, 100, 0.3);
+  }
+
+  .status-badge.limit-reached {
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+  }
+
+  .limit-badge {
+    display: block;
+    font-size: 10px;
+    margin-top: 2px;
+    font-weight: 500;
+  }
+
+  .reminders-progress {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: rgba(0, 240, 255, 0.08);
+    color: #00f0ff;
+    font-weight: 600;
+    font-size: 12px;
+    border: 1px solid rgba(0, 240, 255, 0.2);
+  }
+
+  .reminders-progress.exhausted {
+    background: rgba(255, 193, 7, 0.08);
+    color: #ffc107;
+    border-color: rgba(255, 193, 7, 0.2);
   }
 
   .error-card {
@@ -3439,6 +3499,99 @@ Best regards</div>
     font-style: italic;
   }
 
+  /* Optional Box Style */
+  .optional-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(0, 240, 255, 0.05);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+  }
+
+  .optional-box-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .optional-description {
+    font-size: 11px;
+    color: rgba(232, 247, 255, 0.5);
+    margin: 0;
+  }
+
+  .warning-icon {
+    color: yellow;
+    cursor: help;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin: 0 4px;
+    vertical-align: middle;
+  }
+
+  .warning-icon svg {
+    stroke-width: 2.5;
+  }
+
+  .warning-icon[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 130%;
+    left: 0;
+    transform: translateX(-10px);
+    background: #ffc107;
+    color: #333;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 1000;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    animation: tooltip-fade-in 0.2s ease-in;
+    display: inline-block;
+    pointer-events: none;
+  }
+
+  .warning-icon[data-tooltip]:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 120%;
+    left: 8px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #ffc107;
+    z-index: 1000;
+    animation: tooltip-fade-in 0.2s ease-in;
+    pointer-events: none;
+  }
+
+  @keyframes tooltip-fade-in {
+    from {
+      opacity: 0;
+      transform: translateX(-10px) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-10px) translateY(0);
+    }
+  }
+
+  @keyframes pulse-warning {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
   /* Responsive Provider Grid */
   @media (max-width: 768px) {
     .provider-grid {
@@ -4589,7 +4742,43 @@ Best regards</div>
       .actions-group {
         display: flex;
         gap: 6px;
+        margin: 0 auto;
+
+      }
+
+      .action-btn {
+        display: flex;
+        align-items: center;
         justify-content: center;
+        width: 32px;
+        height: 32px;
+        padding: 4px;
+        border: 1px solid rgba(0, 240, 255, 0.15);
+        background: rgba(0, 240, 255, 0.05);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+      }
+
+      .action-btn:hover {
+        background: rgba(0, 240, 255, 0.1);
+        border-color: rgba(0, 240, 255, 0.3);
+      }
+
+      .action-btn.edit-btn {
+        color: #00f0ff;
+      }
+
+      .action-btn.delete-btn {
+        color: #ff6464;
+        border-color: rgba(255, 100, 100, 0.15);
+        background: rgba(255, 100, 100, 0.05);
+      }
+
+      .action-btn.delete-btn:hover {
+        background: rgba(255, 100, 100, 0.1);
+        border-color: rgba(255, 100, 100, 0.3);
       }
 
       .status-badge {
@@ -4652,24 +4841,20 @@ Best regards</div>
           font-size: 11px;
         }
 
-        .col-email { width: 18%; min-width: 100px; }
-        .col-status { width: 10%; min-width: 60px; }
-        .col-schedule { width: 18%; min-width: 100px; }
-        .col-window { width: 14%; min-width: 80px; }
-        .col-max { width: 10%; min-width: 50px; }
-        .col-actions { width: 12%; min-width: 60px; }
+        .col-email { width: 22%; min-width: 100px; }
+        .col-status { width: 18%; min-width: 80px; }
+        .col-schedule { width: 18%; min-width: 90px; }
+        .col-max { width: 16%; min-width: 70px; }
+        .col-actions { width: 26%; min-width: 80px; }
 
         .email-cell {
           font-size: 11px;
         }
 
-        .schedule-text,
-        .window-text {
-          font-size: 10px;
-        }
-
         .actions-group {
           gap: 4px;
+          display: flex;
+          justify-content: center;
         }
 
       }
@@ -4683,55 +4868,136 @@ Best regards</div>
         }
 
         .reminders-table {
-          font-size: 11px;
+          font-size: 10px;
+          min-width: 600px;
+        }
+
+        .reminders-table thead {
+          background: rgba(0, 240, 255, 0.1);
         }
 
         .reminders-table thead th {
           padding: 8px 4px;
           font-size: 9px;
           letter-spacing: 0.2px;
+          text-align: center;
         }
 
         .reminders-table tbody td {
           padding: 6px 4px;
           font-size: 10px;
+          text-align: center;
         }
 
-        .col-email { width: 25%; min-width: 90px; }
-        .col-status { width: 12%; min-width: 50px; }
-        .col-schedule { width: 20%; min-width: 90px; }
-        .col-window { width: 18%; min-width: 70px; }
-        .col-max { width: 10%; min-width: 40px; }
-        .col-actions { width: 15%; min-width: 50px; }
+        .col-email {
+          width: 20%;
+          min-width: 80px;
+          text-align: left;
+        }
+
+        .col-status {
+          width: 18%;
+          min-width: 70px;
+          text-align: center;
+        }
+
+        .col-schedule {
+          width: 18%;
+          min-width: 80px;
+          text-align: center;
+        }
+
+        .col-max {
+          width: 16%;
+          min-width: 60px;
+          text-align: center;
+        }
+
+        .col-actions {
+          width: 28%;
+          min-width: 90px;
+          text-align: center;
+        }
 
         .email-cell {
           font-size: 10px;
-        }
-
-        .schedule-text,
-        .window-text {
-          font-size: 9px;
-        }
-
-        .max-reminders {
-          padding: 3px 6px;
-          font-size: 10px;
-        }
-
-        .actions-group {
-          gap: 3px;
-        }
-
-        .btn-small {
-          width: auto;
-          height: 28px;
-          font-size: 11px;
+          font-weight: 500;
         }
 
         .status-badge {
-          font-size: 10px;
-          padding: 3px 8px;
+          display: inline-flex;
+          flex-direction: column;
+          align-items: center;
+          width: auto;
+          padding: 4px 6px;
+          font-size: 9px;
+          gap: 2px;
         }
+
+        .status-badge span:not(.limit-badge) {
+          display: block;
+          text-align: center;
+        }
+
+        .limit-badge {
+          display: block;
+          font-size: 7px;
+          margin-top: 1px;
+        }
+
+        .reminders-progress {
+          display: inline-block;
+          padding: 4px 6px;
+          font-size: 10px;
+          border-radius: 4px;
+        }
+
+        .actions-group {
+          display: flex;
+          gap: 4px;
+          justify-content: center;
+          width: 100%;
+        }
+
+        .action-btn {
+          width: 28px;
+          height: 28px;
+          padding: 4px;
+        }
+
+      }
+
+      /* Extra small screens (max-width: 360px) */
+      @media (max-width: 360px) {
+        .reminders-table {
+          min-width: 520px;
+        }
+
+        .reminders-table thead th {
+          padding: 6px 2px;
+          font-size: 8px;
+        }
+
+        .reminders-table tbody td {
+          padding: 4px 2px;
+          font-size: 9px;
+        }
+
+        .col-email { min-width: 70px; }
+        .col-status { min-width: 60px; }
+        .col-schedule { min-width: 70px; }
+        .col-max { min-width: 50px; }
+        .col-actions { min-width: 80px; }
+
+        .status-badge {
+          padding: 2px 4px;
+        }
+
+        .action-btn {
+          width: 24px;
+          height: 24px;
+        }
+
       }
 
     .btn-small {
@@ -4751,6 +5017,58 @@ Best regards</div>
     .btn-small:hover {
       border-color: rgba(0, 240, 255, 0.3);
       color: #e8f7ff;
+    }
+
+    .icon-button {
+      padding: 0;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: rgba(0, 240, 255, 0.08);
+      border: 1.5px solid rgba(0, 240, 255, 0.25);
+      cursor: pointer;
+      color: #00f0ff;
+      transition: all 0.2s ease;
+      font-weight: 500;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .icon-button:hover:not(:disabled) {
+      background: rgba(0, 240, 255, 0.15);
+      border-color: rgba(0, 240, 255, 0.5);
+      color: #00f0ff;
+      box-shadow: 0 2px 8px rgba(0, 240, 255, 0.2);
+      transform: translateY(-2px);
+    }
+
+    .icon-button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .icon-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary.icon-button {
+      background: rgba(255, 100, 100, 0.08);
+      border-color: rgba(255, 100, 100, 0.25);
+      color: #ff6464;
+    }
+
+    .btn-secondary.icon-button:hover:not(:disabled) {
+      background: rgba(255, 100, 100, 0.15);
+      border-color: rgba(255, 100, 100, 0.5);
+      color: #ff6464;
+      box-shadow: 0 2px 8px rgba(255, 100, 100, 0.2);
+      transform: translateY(-2px);
+    }
+
+    .btn-secondary.icon-button:active:not(:disabled) {
+      transform: translateY(0);
     }
 
     .btn-edit:hover {
@@ -4844,7 +5162,7 @@ Best regards</div>
     }
 
     .btn-small {
-      padding: 8px 16px;
+      padding: 3px 16px;
       font-size: 12px;
       height: auto;
       min-width: auto;

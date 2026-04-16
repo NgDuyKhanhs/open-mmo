@@ -23,10 +23,7 @@ interface IReminderService {
      * Delete reminder
      */
     fun deleteReminder(userId: String, contactEmail: String): Map<String, String>
-
-    /**
-     * Process reminders - called by scheduler
-     */
-    fun processReminders()
 }
+
+
 
