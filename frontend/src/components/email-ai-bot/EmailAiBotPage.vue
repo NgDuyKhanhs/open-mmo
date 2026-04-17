@@ -410,13 +410,14 @@ const saveConfigAndReload = async () => {
               <div class="reminder-form-container">
                 <div class="new-reminder-header">
                   <h4 class="new-reminder-title">Create reminder</h4>
-<!--                  <button-->
-<!--                    @click="showReminderHelp = true"-->
-<!--                    class="help-icon-btn"-->
-<!--                    title="How reminders work"-->
-<!--                  >-->
-<!--                    ?-->
-<!--                  </button>-->
+                  <button
+                    @click="showReminderHelp = true"
+                    class="help-icon-btn"
+                    type="button"
+                    title="How reminders work"
+                  >
+                    <HelpCircle :size="16" />
+                  </button>
                 </div>
 
                 <div class="form-section">
@@ -851,59 +852,43 @@ const saveConfigAndReload = async () => {
 
             <div class="modal-content">
               <div class="help-section">
-                <h4 class="help-title">📋 First Reminder</h4>
-                <p class="help-text">
-                  <strong>Remind after inactivity:</strong> Bot waits for this many minutes of conversation inactivity before sending the first reminder.
-                </p>
-                <div class="help-example">
-                  <strong>Example:</strong> If set to 60 minutes, bot sends first reminder when user hasn't replied for 60+ minutes.
-                </div>
+                <h4 class="help-title">📋 After Inactivity</h4>
+                <p class="help-text">Send first reminder after N minutes of no reply</p>
+                <div class="help-example"><strong>Example:</strong> 60 min → send reminder when user inactive for 60+ minutes</div>
               </div>
 
               <div class="help-section">
-                <h4 class="help-title">🔄 Repeat Reminders</h4>
-                <p class="help-text">
-                  <strong>Repeat every:</strong> After first reminder, bot sends follow-ups at this interval, regardless of conversation activity.
-                </p>
-                <div class="help-example">
-                  <strong>Example:</strong> If set to 1440 minutes (24 hours), bot sends reminder every day. Even if user replies, next reminder still sends 24 hours after the previous one.
-                </div>
+                <h4 class="help-title">🔄 Repeat Interval</h4>
+                <p class="help-text">Send follow-ups every N minutes (even if user replies)</p>
+                <div class="help-example"><strong>Example:</strong> 1440 min (24h) → reminder daily</div>
               </div>
 
               <div class="help-section">
                 <h4 class="help-title">🎯 Max Reminders</h4>
-                <p class="help-text">
-                  <strong>Maximum reminders:</strong> Total number of reminders to send before stopping.
-                </p>
-                <div class="help-example">
-                  <strong>Example:</strong> If set to 5, bot sends at most 5 reminders. After that, no more reminders are sent.
-                </div>
+                <p class="help-text">Stop sending after reaching this limit</p>
+                <div class="help-example"><strong>Example:</strong> 5 → send max 5 reminders total</div>
               </div>
 
               <div class="help-section">
-                <h4 class="help-title">📅 Timeline Example</h4>
+                <h4 class="help-title">📅 Example Timeline</h4>
                 <div class="timeline-example">
                   <div class="timeline-item">
-                    <span class="timeline-time">Day 1 - 11:00</span>
-                    <span class="timeline-event">Send Reminder #1 (after 60 min inactivity)</span>
+                    <span class="timeline-time">11:00</span>
+                    <span class="timeline-event">Reminder #1 (after 60 min inactivity)</span>
                   </div>
                   <div class="timeline-item">
-                    <span class="timeline-time">Day 1 - 12:00</span>
-                    <span class="timeline-event">User replies (conversation active again)</span>
+                    <span class="timeline-time">12:00</span>
+                    <span class="timeline-event">User replies</span>
                   </div>
                   <div class="timeline-item">
-                    <span class="timeline-time">Day 2 - 11:00</span>
-                    <span class="timeline-event">Send Reminder #2 (24 hours after #1, even though user replied)</span>
-                  </div>
-                  <div class="timeline-item">
-                    <span class="timeline-time">Day 3-5 - 11:00</span>
-                    <span class="timeline-event">Send Reminders #3, #4, #5 (then stop)</span>
+                    <span class="timeline-time">+24h</span>
+                    <span class="timeline-event">Reminder #2 (still sends, user replied)</span>
                   </div>
                 </div>
               </div>
 
               <div class="help-note">
-                💡 <strong>Note:</strong> Repeat interval is based on when bot sends reminders, not on conversation activity. This ensures regular follow-ups even if user keeps replying.
+                💡 Repeat is time-based, not activity-based. Regular follow-ups even if user responds.
               </div>
             </div>
           </div>

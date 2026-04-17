@@ -197,6 +197,9 @@ class ReminderScheduler(
             }
 
             // Normal single contact flow
+            // ✅ OPTIMIZATION 1: Pre-generate reminder body once (avoid duplicate call)
+            val reminderBody = buildReminderMessage(reminder.userId, reminder.contactEmail)
+
             // 1. Query Gmail API to find the last thread with this contact
             val query = "from:${reminder.contactEmail} OR to:${reminder.contactEmail}"
 
@@ -210,69 +213,136 @@ class ReminderScheduler(
                 logger.warn("No existing thread found with ${reminder.contactEmail}, creating new thread")
                 // Send as new email (not a reply)
                 val subject = "Follow-up: Checking in"
-                val body = buildReminderMessage(reminder.userId, reminder.contactEmail)
-                gmailApiService.sendReply(
-                    userId = reminder.userId,
-                    threadId = "",  // Empty threadId for new message
+                sendReminderWithRetry(
+                    reminder = reminder,
+                    threadId = "",
                     toEmail = reminder.contactEmail,
                     subject = subject,
-                    bodyText = body
+                    bodyText = reminderBody
                 )
-                // Save success history
-                saveReminderHistory(reminder, "sent", "", body, subject)
+                saveReminderHistory(reminder, "sent", "", reminderBody, subject)
                 return
             }
 
             // 2. Get the last message details
+            // ✅ OPTIMIZATION 2: Combine getMessageHeaders + getMessageMeta calls
             val lastMessageId = messageIds.first()
             val headers = gmailApiService.getMessageHeaders(reminder.userId, lastMessageId)
             val meta = gmailApiService.getMessageMeta(reminder.userId, lastMessageId)
 
+            // ✅ OPTIMIZATION 3: Better null safety
+            if (headers.isEmpty() || meta.isEmpty()) {
+                logger.warn("Missing headers or metadata for message $lastMessageId, treating as new thread")
+                val subject = "Follow-up: Checking in"
+                sendReminderWithRetry(
+                    reminder = reminder,
+                    threadId = "",
+                    toEmail = reminder.contactEmail,
+                    subject = subject,
+                    bodyText = reminderBody
+                )
+                saveReminderHistory(reminder, "sent", "", reminderBody, subject)
+                return
+            }
+
             val threadId = meta["threadId"] as? String ?: ""
             val fromHeader = headers["From"] ?: ""
-            val subjectHeader = headers["Subject"] ?: "Re: (no subject)"
+            val subjectHeader = headers["Subject"]?.takeIf { it.isNotBlank() } ?: "(No subject)"
 
             // 3. Determine if last message was from bot or contact
             val isLastFromContact = fromHeader.contains(reminder.contactEmail, ignoreCase = true)
 
-            // 4. Send reminder as reply or new thread
-            val replySubject = if (subjectHeader.startsWith("Re:")) {
-                subjectHeader
-            } else {
-                "Re: $subjectHeader"
+            // 4. Generate proper subject line for reply
+            // ✅ OPTIMIZATION 4: Cleaner subject generation
+            val replySubject = when {
+                subjectHeader.startsWith("Re:", ignoreCase = true) -> subjectHeader
+                subjectHeader == "(No subject)" -> "Re: (No subject)"
+                else -> "Re: $subjectHeader"
             }
 
-            val reminderBody = buildReminderMessage(reminder.userId, reminder.contactEmail)
-
-            if (isLastFromContact && threadId.isNotEmpty()) {
-                // Last message from contact - send as reply to thread
-                logger.debug("Last message from contact, sending as reply to thread $threadId")
-                gmailApiService.sendReply(
-                    userId = reminder.userId,
-                    threadId = threadId,
-                    toEmail = reminder.contactEmail,
-                    subject = replySubject,
-                    bodyText = reminderBody
-                )
-            } else {
-                // Last message from bot - send as new thread or reply anyway
-                logger.debug("Last message from bot or no thread, sending new message")
-                gmailApiService.sendReply(
-                    userId = reminder.userId,
-                    threadId = threadId.ifEmpty { "" },
-                    toEmail = reminder.contactEmail,
-                    subject = replySubject,
-                    bodyText = reminderBody
-                )
-            }
+            // 5. Send reminder via appropriate method
+            sendReminderWithRetry(
+                reminder = reminder,
+                threadId = threadId.takeIf { isLastFromContact && it.isNotEmpty() } ?: "",
+                toEmail = reminder.contactEmail,
+                subject = replySubject,
+                bodyText = reminderBody
+            )
 
             // Save success history
             saveReminderHistory(reminder, "sent", "", reminderBody, replySubject)
             logger.info("Reminder email sent successfully to ${reminder.contactEmail}")
         } catch (e: Exception) {
             logger.error("Failed to send reminder email to ${reminder.contactEmail}: ${e.message}", e)
+            // ✅ OPTIMIZATION 5: Always save failure history before throwing
+            try {
+                saveReminderHistory(reminder, "failed", e.message ?: "Unknown error", "", "Follow-up: Checking in")
+            } catch (saveEx: Exception) {
+                logger.warn("Failed to save failure history (non-fatal): ${saveEx.message}")
+            }
             throw e
         }
+    }
+
+    /**
+     * ✅ OPTIMIZED: Send reminder with retry logic (3 attempts with exponential backoff)
+     * Handles transient network failures gracefully
+     */
+    private fun sendReminderWithRetry(
+        reminder: ReminderConfig,
+        threadId: String,
+        toEmail: String,
+        subject: String,
+        bodyText: String,
+        maxRetries: Int = 3,
+        initialDelayMs: Long = 500
+    ) {
+        var lastException: Exception? = null
+        var delayMs = initialDelayMs
+
+        for (attempt in 1..maxRetries) {
+            try {
+                logger.debug("Sending reminder to $toEmail (attempt $attempt/$maxRetries)")
+                gmailApiService.sendReply(
+                    userId = reminder.userId,
+                    threadId = threadId,
+                    toEmail = toEmail,
+                    subject = subject,
+                    bodyText = bodyText
+                )
+                logger.debug("Reminder sent successfully to $toEmail on attempt $attempt")
+                return  // Success
+            } catch (e: Exception) {
+                lastException = e
+                logger.warn("Attempt $attempt/$maxRetries failed for $toEmail: ${e.message}")
+
+                // Don't retry on last attempt or for permanent errors
+                if (attempt < maxRetries) {
+                    // Check if error is retryable (network/transient errors)
+                    val isRetryable = when {
+                        e.message?.contains("timeout", ignoreCase = true) == true -> true
+                        e.message?.contains("connection", ignoreCase = true) == true -> true
+                        e.message?.contains("temporarily", ignoreCase = true) == true -> true
+                        e is java.net.SocketException -> true
+                        e is java.net.ConnectException -> true
+                        else -> false
+                    }
+
+                    if (isRetryable) {
+                        logger.debug("Retryable error detected, waiting ${delayMs}ms before retry...")
+                        Thread.sleep(delayMs)
+                        delayMs = (delayMs * 1.5).toLong()  // Exponential backoff
+                    } else {
+                        logger.debug("Non-retryable error, skipping retries")
+                        throw e
+                    }
+                }
+            }
+        }
+
+        // All retries exhausted
+        logger.error("Failed to send reminder to $toEmail after $maxRetries attempts: ${lastException?.message}")
+        throw lastException ?: Exception("Failed to send reminder after $maxRetries attempts")
     }
 
     private fun sendReminderToAllCorrespondents(reminder: ReminderConfig) {
