@@ -8,6 +8,7 @@ import {
   deleteReminder,
   type ReminderConfig,
 } from '@/services/reminderService'
+import { getContactsList } from '@/services/gmailService'
 
 export function useReminders() {
   const authStore = useAuthStore()
@@ -77,20 +78,32 @@ export function useReminders() {
   // Load contacts
   const loadContacts = async () => {
     try {
-      if (!authStore.accessToken) return
+      if (!authStore.accessToken) {
+        console.warn('No access token available')
+        return
+      }
+
+      // Skip if already loading
+      if (isLoadingContacts.value) {
+        console.debug('Already loading contacts, skipping...')
+        return
+      }
+
+      // Only skip if we have data
+      if (contactsList.value.length > 0) {
+        console.debug('Contacts already loaded, skipping API call')
+        return
+      }
+
+      console.log('Loading contacts from API...')
       isLoadingContacts.value = true
 
-      // Note: getContactsList is not available in reminderService
-      // For now, contacts will be populated from Gmail when needed
-      // In a future update, this endpoint should be added to the backend
-      contactsList.value = []
-
-      // TODO: Uncomment when backend API is available
-      // const contacts = await getContactsList(authStore.accessToken)
-      // contactsList.value = contacts || []
+      const contacts = await getContactsList(authStore.accessToken)
+      console.log('Contacts loaded:', contacts.length, 'items')
+      contactsList.value = contacts || []
     } catch (err) {
       console.error('Failed to load contacts:', err)
-      // Silently fail - contacts are optional
+      toast.error('Failed to load contacts')
     } finally {
       isLoadingContacts.value = false
     }

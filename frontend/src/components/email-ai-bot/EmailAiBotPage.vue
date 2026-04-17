@@ -444,7 +444,7 @@ const saveConfigAndReload = async () => {
                           v-else
                           v-model="reminders.newReminder.value.contactEmail"
                           class="form-select"
-                          @click="reminders.loadContacts()"
+                          @mousedown="reminders.loadContacts()"
                           required
                         >
                           <option value="">Select a contact...</option>
