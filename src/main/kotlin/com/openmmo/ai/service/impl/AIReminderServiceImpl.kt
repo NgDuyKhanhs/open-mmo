@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 /**
  * AI Reminder Service Implementation
  * Generates personalized reminder emails using user's selected AI provider
- * Uses Groq (default) or Gemini based on user preference from BotConfig
+ * Uses Gemini (default) or Groq based on user preference from BotConfig
  */
 @Service
 class AIReminderServiceImpl(
@@ -26,7 +26,7 @@ class AIReminderServiceImpl(
     override fun generateReminderMessage(
         contactEmail: String,
         conversationContext: String?,
-        aiProvider: String  // Default to Groq
+        aiProvider: String  // Default to Gemini
     ): String {
         return try {
             val aiService = getAiServiceForProvider(aiProvider)
@@ -84,18 +84,18 @@ Is there anything I can help you with?
 
     /**
      * Get the appropriate AI service based on provider preference
-     * @param provider "groq" or "gemini"
-     * @return IGeminiAiService instance (either Groq or Gemini impl)
+     * @param provider "gemini" (default) or "groq"
+     * @return IGeminiAiService instance (either Gemini or Groq impl)
      */
     private fun getAiServiceForProvider(provider: String): IGeminiAiService {
         return when (provider.lowercase()) {
-            "gemini" -> {
-                logger.debug("Using Gemini AI service for reminder generation")
-                geminiAiService
+            "groq" -> {
+                logger.debug("Using Groq AI service for reminder generation")
+                groqAiService
             }
             else -> {
-                logger.debug("Using Groq AI service for reminder generation (default)")
-                groqAiService
+                logger.debug("Using Gemini AI service for reminder generation (default)")
+                geminiAiService
             }
         }
     }

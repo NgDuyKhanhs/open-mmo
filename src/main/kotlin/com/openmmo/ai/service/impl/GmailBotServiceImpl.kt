@@ -128,7 +128,7 @@ class GmailBotServiceImpl(
         logger.debug("Getting AI provider for user: $userId")
 
         val config = botConfigRepository.findByUserId(userId)
-        val provider = config?.aiProvider ?: "groq"
+        val provider = config?.aiProvider ?: "gemini"
 
         return mapOf(
             "aiProvider" to provider,

@@ -8,7 +8,7 @@ import {
 
 export function useAiProvider() {
   const authStore = useAuthStore()
-  const selectedAiProvider = ref<'gemini' | 'groq'>('groq')
+  const selectedAiProvider = ref<'gemini' | 'groq'>('gemini')
 
   const loadAiProvider = async () => {
     try {

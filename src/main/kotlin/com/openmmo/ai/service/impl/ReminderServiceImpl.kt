@@ -151,10 +151,10 @@ class ReminderServiceImpl(
     private fun getBotConfigAiProvider(userId: String): String {
         return try {
             val botConfig = gmailBotConfigRepository.findByUserId(userId)
-            botConfig?.aiProvider?.takeIf { it.isNotBlank() } ?: "groq"
+            botConfig?.aiProvider?.takeIf { it.isNotBlank() } ?: "gemini"
         } catch (e: Exception) {
             logger.warn("Failed to get AI provider for user $userId: ${e.message}")
-            "groq"  // Default to Groq
+            "gemini"  // Default to Gemini
         }
     }
 }

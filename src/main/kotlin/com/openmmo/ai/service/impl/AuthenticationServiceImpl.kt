@@ -294,8 +294,7 @@ class AuthenticationServiceImpl(
                     isActive = true,
                     loginProvider = "google"
                 )
-                userRepository.save(newUser)
-                newUser
+                userRepository.save(newUser)  // ✅ FIXED: Return the saved user with generated ID
             }
 
             // Generate application JWT tokens

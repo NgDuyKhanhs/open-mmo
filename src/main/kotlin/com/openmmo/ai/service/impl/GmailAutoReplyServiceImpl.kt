@@ -587,18 +587,18 @@ Best regards"""
 
     /**
      * Get the appropriate AI service based on user's provider preference
-     * @param provider "groq" or "gemini"
-     * @return IGeminiAiService instance (either Groq or Gemini impl)
+     * @param provider "gemini" (default) or "groq"
+     * @return IGeminiAiService instance (either Gemini or Groq impl)
      */
     private fun getAiServiceForProvider(provider: String): IGeminiAiService {
         return when (provider.lowercase()) {
-            "gemini" -> {
-                logger.debug("Using Gemini AI service")
-                geminiAiService
+            "groq" -> {
+                logger.debug("Using Groq AI service")
+                groqAiService
             }
             else -> {
-                logger.debug("Using Groq AI service (default)")
-                groqAiService
+                logger.debug("Using Gemini AI service (default)")
+                geminiAiService
             }
         }
     }

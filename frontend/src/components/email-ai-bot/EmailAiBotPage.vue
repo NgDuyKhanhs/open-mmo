@@ -368,20 +368,6 @@ const saveConfigAndReload = async () => {
 
                 <div class="provider-grid">
                   <div
-                    @click="provider.changeAiProvider('groq')"
-                    :class="['provider-card', { selected: provider.selectedAiProvider.value === 'groq' }]"
-                  >
-                    <div class="provider-card-header">
-                      <span class="provider-name">Groq</span>
-                    </div>
-                    <div class="provider-details">
-                      <p class="provider-feature">⚡ Fast & Cheap</p>
-                      <p class="provider-feature">Recommended</p>
-                    </div>
-                    <div v-if="provider.selectedAiProvider.value === 'groq'" class="provider-checkmark">✓</div>
-                  </div>
-
-                  <div
                     @click="provider.changeAiProvider('gemini')"
                     :class="['provider-card', { selected: provider.selectedAiProvider.value === 'gemini' }]"
                   >
@@ -390,9 +376,23 @@ const saveConfigAndReload = async () => {
                     </div>
                     <div class="provider-details">
                       <p class="provider-feature">🔬 Advanced</p>
-                      <p class="provider-feature">Premium Model</p>
+                      <p class="provider-feature">Recommended</p>
                     </div>
                     <div v-if="provider.selectedAiProvider.value === 'gemini'" class="provider-checkmark">✓</div>
+                  </div>
+
+                  <div
+                    @click="provider.changeAiProvider('groq')"
+                    :class="['provider-card', { selected: provider.selectedAiProvider.value === 'groq' }]"
+                  >
+                    <div class="provider-card-header">
+                      <span class="provider-name">Groq</span>
+                    </div>
+                    <div class="provider-details">
+                      <p class="provider-feature">⚡ Fast & Cheap</p>
+                      <p class="provider-feature">Alternative</p>
+                    </div>
+                    <div v-if="provider.selectedAiProvider.value === 'groq'" class="provider-checkmark">✓</div>
                   </div>
                 </div>
               </div>
