@@ -230,10 +230,15 @@ export function useReminders() {
 
      editingReminderId.value = reminder.contactEmail
 
+     // Simple checks for checkbox visibility
+     const hasContactEmail = !!(reminder.contactEmail && reminder.contactEmail.trim().length > 0)
+     const hasMaxReminders = !!(reminder.maxReminders && reminder.maxReminders > 0)
+     const hasRepeatEvery = !!(reminder.repeatEvery && reminder.repeatEvery > 0)
+
      visibleOptionalFields.value = {
-       contactEmail: reminder.contactEmail.trim().length > 0,
-       maxReminders: reminder.maxReminders !== null && reminder.maxReminders !== undefined,
-       repeatEvery: reminder.repeatEvery !== null && reminder.repeatEvery !== undefined && reminder.repeatEvery !== 1440,
+       contactEmail: hasContactEmail,
+       maxReminders: hasMaxReminders,
+       repeatEvery: hasRepeatEvery,
        enabled: reminder.enabled !== null && reminder.enabled !== undefined,
      }
    }
