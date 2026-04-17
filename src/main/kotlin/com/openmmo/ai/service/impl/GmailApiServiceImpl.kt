@@ -442,6 +442,13 @@ $encodedBody
         return refreshAndCacheToken(connection, cache)
     }
 
+        /**
+     * Public method to get access token - used by other services like ConversationContextService
+     */
+    fun getAccessTokenPublic(connection: com.openmmo.ai.entity.GmailConnection): String {
+        return getAccessToken(connection)
+    }
+
     /**
      * Refreshes the access token and caches it
      * This method can be called multiple times to force a refresh (e.g., after 401 error)
@@ -646,17 +653,100 @@ $encodedBody
 
     override fun getContactsList(userId: String): List<String> {
         return try {
-            logger.debug("Getting contacts list for user: {}", userId)
+            logger.debug("Getting contacts list from Gmail inbox for user: $userId")
 
-            // Get all correspondent emails from correspondent_memory table
-            val correspondents = correspondentMemoryRepository.findByUserId(userId)
-            val contacts = correspondents.map { it.correspondentEmail }.distinct().sorted()
+            val connection = connectionRepository.findByUserId(userId)
+                ?: run {
+                    logger.warn("Gmail not connected for user: $userId")
+                    return emptyList()
+                }
 
-            logger.debug("Found {} unique contacts for user: {}", contacts.size, userId)
-            contacts
+            val accessToken = getAccessToken(connection)
+
+            // Query Gmail API to get emails from real people only (no system/auto-generated)
+            // Comprehensive filters to extract only genuine contacts:
+            // - in:inbox: only inbox emails
+            // - newer_than:30d: only last 30 days (recent contacts)
+            // - -is:mailing-list: exclude mailing lists
+            // - -category:promotions/updates/forums/social: exclude Gmail auto-categories
+            // - -from: exclude noreply, no-reply, donotreply, do-not-reply, mailer-daemon, postmaster
+            // - -subject: exclude emails with "do not reply" or "unsubscribe" in subject
+            @Suppress("UNCHECKED_CAST")
+            val response = gmailApiClient.listMessages(
+                accessToken = accessToken,
+                query = "in:inbox newer_than:30d " +
+                        "-is:mailing-list " +
+                        "-category:promotions -category:updates -category:forums -category:social " +
+                        "-from:(noreply OR \"no-reply\" OR donotreply OR \"do-not-reply\" OR \"mailer-daemon\" OR postmaster) " +
+                        "-subject:(\"do not reply\" OR unsubscribe)",
+                maxResults = 100  // Get up to 100 recent emails from real people
+            )
+
+            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+            logger.debug("Found ${messages.size} emails in inbox")
+
+            // Extract unique sender emails from all inbox messages
+            val contactEmails = mutableSetOf<String>()
+
+            for (msg in messages) {
+                val msgId = msg["id"] ?: continue
+                try {
+                    // Fetch message to get "From" header
+                    val msgDetails = gmailApiClient.getMessageMetadata(accessToken, msgId)
+                    @Suppress("UNCHECKED_CAST")
+                    val payload = msgDetails["payload"] as? Map<String, Any>
+                    @Suppress("UNCHECKED_CAST")
+                    val headers = payload?.get("headers") as? List<Map<String, String>>
+
+                    // Extract "From" header and parse email address
+                    val fromHeader = headers?.find { it["name"] == "From" }?.get("value") ?: continue
+                    val email = extractEmailFromHeader(fromHeader)
+
+                    if (email.isNotEmpty() && email.contains("@")) {
+                        contactEmails.add(email)
+                    }
+                } catch (e: Exception) {
+                    logger.debug("Failed to extract contact from message $msgId: ${e.message}")
+                    // Continue processing other messages
+                }
+            }
+
+            val sortedContacts = contactEmails.sorted()
+            logger.debug("Extracted ${sortedContacts.size} unique contact emails from inbox")
+            sortedContacts
         } catch (e: Exception) {
-            logger.error("Error getting contacts list: {}", e.message, e)
+            logger.error("Error getting contacts list from Gmail: ${e.message}", e)
             emptyList()
         }
+    }
+
+    /**
+     * Extract email address from RFC 2822 format header
+     * Input examples:
+     * - "John Doe <john@example.com>" → "john@example.com"
+     * - "john@example.com" → "john@example.com"
+     * - "contact@domain.co.uk" → "contact@domain.co.uk"
+     */
+    private fun extractEmailFromHeader(fromHeader: String): String {
+        // Try to extract from <...> format first (most common)
+        val angleMatch = Regex("<(.+?)>").find(fromHeader)
+        if (angleMatch != null) {
+            val email = angleMatch.groupValues.getOrNull(1)
+            if (!email.isNullOrEmpty() && email.contains("@")) {
+                return email.trim()
+            }
+        }
+
+        // Try to extract email using regex pattern
+        val emailMatch = Regex("([\\w.+-]+@[\\w.-]+\\.[a-zA-Z]{2,})").find(fromHeader)
+        if (emailMatch != null) {
+            val email = emailMatch.groupValues.getOrNull(0)
+            if (!email.isNullOrEmpty()) {
+                return email.trim()
+            }
+        }
+
+        logger.debug("Could not extract email from header: $fromHeader")
+        return ""
     }
 }

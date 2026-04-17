@@ -11,6 +11,7 @@ import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.service.IReminderService
 import com.openmmo.ai.service.IAIReminderService
 import com.openmmo.ai.service.IGmailApiService
+import com.openmmo.ai.service.IConversationContextService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -21,7 +22,8 @@ class ReminderServiceImpl(
     private val gmailApiService: IGmailApiService,
     private val correspondentMemoryRepository: CorrespondentMemoryRepository,
     private val gmailBotConfigRepository: GmailBotConfigRepository,
-    private val aiReminderService: IAIReminderService
+    private val aiReminderService: IAIReminderService,
+    private val conversationContextService: IConversationContextService
 ) : IReminderService {
 
     companion object {
@@ -108,21 +110,32 @@ class ReminderServiceImpl(
         return mapOf("status" to "success", "message" to "Reminder deleted")
     }
 
-    // ...(schedulerは ReminderScheduler に移動)...
+    // ...(scheduler là ReminderScheduler có di chuyển)...
 
-    private fun buildReminderMessage(
+    /**
+     * Build reminder message with conversation context
+     *
+     * Preference order:
+     * 1. Try to get recent conversation context from Gmail (IConversationContextService)
+     * 2. Fallback to profileSummary from CorrespondentMemory DB
+     * 3. If both fail, pass null/empty to AI service (it will handle gracefully)
+     */
+    fun buildReminderMessage(
         userId: String,
-        contactEmail: String,
-        profileSummary: String? = null
+        contactEmail: String
     ): String {
-        // Get profile summary if not provided
-        val summary = profileSummary ?: getCorrespondentProfileSummary(userId, contactEmail)
+        // Step 1: Try to get conversation context from Gmail (cached 15 min)
+        val gmailContext = conversationContextService.getContextForReminder(userId, contactEmail)
 
-        // Get user's selected AI provider from BotConfig
+        // Step 2: Fallback to profileSummary from DB if Gmail context not available
+        val context = gmailContext ?: getCorrespondentProfileSummary(userId, contactEmail)
+
+        // Step 3: Get user's selected AI provider
         val aiProvider = getBotConfigAiProvider(userId)
 
-        // Use AI service to generate personalized reminder message with selected provider
-        return aiReminderService.generateReminderMessage(contactEmail, summary, aiProvider)
+        // Step 4: Call AI service once with context (either Gmail or DB summary or null)
+        logger.debug("Building reminder message for $contactEmail with context source: ${if (gmailContext != null) "Gmail" else "DB/fallback"}")
+        return aiReminderService.generateReminderMessage(contactEmail, context, aiProvider)
     }
 
     private fun getCorrespondentProfileSummary(userId: String, contactEmail: String): String {
@@ -145,6 +158,8 @@ class ReminderServiceImpl(
         }
     }
 }
+
+
 
 
 

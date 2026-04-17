@@ -6,18 +6,21 @@ package com.openmmo.ai.service
  */
 interface IAIReminderService {
     /**
-     * Generate personalized reminder message based on conversation history
+     * Generate personalized reminder message based on conversation context or memory
      *
      * @param contactEmail The email address of the contact
-     * @param profileSummary The memory/conversation history with this contact
+     * @param conversationContext Recent conversation context from Gmail (preferred) or profile summary from DB (fallback)
+     *                           Can be null/empty if no context available
      * @param aiProvider The AI provider to use: "groq" (default) or "gemini"
-     * @return Generated personalized reminder message
+     * @return Generated personalized reminder message (email body only, no greeting/signature)
      */
     fun generateReminderMessage(
         contactEmail: String,
-        profileSummary: String,
+        conversationContext: String?,
         aiProvider: String = "groq"
     ): String
 }
+
+
 
 

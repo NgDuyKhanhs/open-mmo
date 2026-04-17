@@ -26,6 +26,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server:3.3.4")
 	implementation("org.springframework.boot:spring-boot-starter-validation:3.3.4") // Jakarta validation
 	implementation("org.springframework.boot:spring-boot-starter-mail:3.3.4") // For email/MIME support
+	implementation("org.springframework.boot:spring-boot-starter-cache:3.3.4") // Spring Cache abstraction
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 	implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310") // For Java Time support

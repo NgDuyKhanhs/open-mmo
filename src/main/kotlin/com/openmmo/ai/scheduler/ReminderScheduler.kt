@@ -1,11 +1,14 @@
 package com.openmmo.ai.scheduler
 
 import com.openmmo.ai.entity.ReminderConfig
+import com.openmmo.ai.entity.ReminderHistory
 import com.openmmo.ai.repository.ReminderConfigRepository
 import com.openmmo.ai.repository.CorrespondentMemoryRepository
 import com.openmmo.ai.repository.GmailBotConfigRepository
+import com.openmmo.ai.repository.ReminderHistoryRepository
 import com.openmmo.ai.service.IAIReminderService
 import com.openmmo.ai.service.IGmailApiService
+import com.openmmo.ai.service.impl.ReminderServiceImpl
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -17,6 +20,7 @@ import java.time.temporal.ChronoUnit
  * Reminder Scheduler
  * Processes reminders on a scheduled interval (every 5 minutes)
  * Checks conditions and sends reminder emails to inactive contacts
+ * Logs all reminder history for audit and user analytics
  */
 @Component
 class ReminderScheduler(
@@ -24,7 +28,9 @@ class ReminderScheduler(
     private val gmailApiService: IGmailApiService,
     private val correspondentMemoryRepository: CorrespondentMemoryRepository,
     private val gmailBotConfigRepository: GmailBotConfigRepository,
-    private val aiReminderService: IAIReminderService
+    private val aiReminderService: IAIReminderService,
+    private val reminderService: ReminderServiceImpl,
+    private val reminderHistoryRepository: ReminderHistoryRepository
 ) {
 
     companion object {
@@ -188,6 +194,8 @@ class ReminderScheduler(
                     subject = subject,
                     bodyText = body
                 )
+                // Save success history
+                saveReminderHistory(reminder, "sent", "", body, subject)
                 return
             }
 
@@ -234,6 +242,8 @@ class ReminderScheduler(
                 )
             }
 
+            // Save success history
+            saveReminderHistory(reminder, "sent", "", reminderBody, replySubject)
             logger.info("Reminder email sent successfully to ${reminder.contactEmail}")
         } catch (e: Exception) {
             logger.error("Failed to send reminder email to ${reminder.contactEmail}: ${e.message}", e)
@@ -243,17 +253,50 @@ class ReminderScheduler(
 
     private fun sendReminderToAllCorrespondents(reminder: ReminderConfig) {
         try {
-            // Query all correspondents from correspondent_memory table for this user
-            val allCorrespondents = correspondentMemoryRepository.findByUserId(reminder.userId)
+            // Query Gmail API to get all recent emails from real people (not mailing lists/auto-replies)
+            val query = "in:inbox newer_than:30d " +
+                    "-is:mailing-list " +
+                    "-category:promotions -category:updates -category:forums -category:social " +
+                    "-from:(noreply OR \"no-reply\" OR donotreply OR \"do-not-reply\" OR \"mailer-daemon\" OR postmaster) " +
+                    "-subject:(\"do not reply\" OR unsubscribe)"
 
-            if (allCorrespondents.isEmpty()) {
-                logger.warn("No correspondents found in database for ALL_CONTACTS reminder, userId: ${reminder.userId}")
+            val messageIds = gmailApiService.searchMessages(
+                userId = reminder.userId,
+                query = query,
+                maxResults = 100  // Get up to 100 recent emails from real people
+            )
+
+            if (messageIds.isEmpty()) {
+                logger.warn("No recent messages found for ALL_CONTACTS reminder, userId: ${reminder.userId}")
                 return
             }
 
-            // Extract unique correspondent emails
-            val correspondentEmails = allCorrespondents.mapNotNull { it.correspondentEmail }.toSet()
-            logger.info("Found ${correspondentEmails.size} correspondents for ALL_CONTACTS reminder from database")
+            // Extract unique senders from messages
+            val correspondentEmails = mutableSetOf<String>()
+            for (messageId in messageIds) {
+                try {
+                    val headers = gmailApiService.getMessageHeaders(reminder.userId, messageId)
+                    val fromHeader = headers["From"] ?: continue
+
+                    // Extract email address from "Name <email@domain.com>" format
+                    val emailPattern = Regex("""<([^>]+)>""")
+                    val match = emailPattern.find(fromHeader)
+                    val email = match?.groupValues?.get(1) ?: fromHeader.trim()
+
+                    if (email.isNotEmpty() && !email.contains("noreply", ignoreCase = true)) {
+                        correspondentEmails.add(email)
+                    }
+                } catch (e: Exception) {
+                    logger.warn("Failed to extract email from message $messageId: ${e.message}")
+                }
+            }
+
+            if (correspondentEmails.isEmpty()) {
+                logger.warn("No valid correspondent emails extracted from messages")
+                return
+            }
+
+            logger.info("Found ${correspondentEmails.size} unique correspondents for ALL_CONTACTS reminder from Gmail API")
 
             // Send reminder to each correspondent with personalized message
             for (correspondent in correspondentEmails) {
@@ -267,9 +310,13 @@ class ReminderScheduler(
                         subject = "Follow-up: Checking in",
                         bodyText = reminderBody
                     )
+                    // Save success history
+                    saveReminderHistory(reminder, "sent", "", reminderBody, "Follow-up: Checking in")
                     logger.info("Reminder sent to correspondent: $correspondent")
                 } catch (e: Exception) {
                     logger.warn("Failed to send reminder to $correspondent: ${e.message}")
+                    // Save failed history
+                    saveReminderHistory(reminder, "failed", e.message ?: "Unknown error", "", "Follow-up: Checking in")
                 }
             }
 
@@ -284,34 +331,11 @@ class ReminderScheduler(
         userId: String,
         contactEmail: String
     ): String {
-        // Get profile summary
-        val summary = getCorrespondentProfileSummary(userId, contactEmail)
-
-        // Get user's selected AI provider from BotConfig
-        val aiProvider = getBotConfigAiProvider(userId)
-
-        // Use AI service to generate personalized reminder message with selected provider
-        return aiReminderService.generateReminderMessage(contactEmail, summary, aiProvider)
-    }
-
-    private fun getCorrespondentProfileSummary(userId: String, contactEmail: String): String {
-        return try {
-            val correspondent = correspondentMemoryRepository.findByUserIdAndCorrespondentEmail(userId, contactEmail)
-            correspondent?.profileSummary?.takeIf { it.isNotBlank() } ?: ""
-        } catch (e: Exception) {
-            logger.warn("Failed to get profile summary for $contactEmail: ${e.message}")
-            ""
-        }
-    }
-
-    private fun getBotConfigAiProvider(userId: String): String {
-        return try {
-            val botConfig = gmailBotConfigRepository.findByUserId(userId)
-            botConfig?.aiProvider?.takeIf { it.isNotBlank() } ?: "groq"
-        } catch (e: Exception) {
-            logger.warn("Failed to get AI provider for user $userId: ${e.message}")
-            "groq"  // Default to Groq
-        }
+        // Delegate to ReminderServiceImpl which handles:
+        // 1. Try to get conversation context from Gmail (cached 15 min)
+        // 2. Fallback to profileSummary from DB
+        // 3. Call AI service once with appropriate context
+        return reminderService.buildReminderMessage(userId, contactEmail)
     }
 
     private fun updateReminderAfterSend(reminder: ReminderConfig) {
@@ -330,6 +354,38 @@ class ReminderScheduler(
             logger.info("Reminder ${reminder.contactEmail} auto-disabled: reached max reminders ($newSentCount/${reminder.maxReminders})")
         } else {
             logger.info("Updated reminder ${reminder.contactEmail}, sentCount=$newSentCount")
+        }
+    }
+
+    /**
+     * Save reminder history for audit and user analytics
+     * @param reminder Reminder config
+     * @param status Status: "sent", "failed", "skipped"
+     * @param reason Reason if failed/skipped
+     * @param body Email body
+     * @param subject Email subject (optional)
+     */
+    private fun saveReminderHistory(
+        reminder: ReminderConfig,
+        status: String,
+        reason: String,
+        body: String,
+        subject: String = "Follow-up: Checking in"
+    ) {
+        try {
+            val history = ReminderHistory(
+                userId = reminder.userId,
+                contactEmail = reminder.contactEmail,
+                subject = subject,
+                body = body,
+                status = status,
+                reason = reason,
+                sentAt = LocalDateTime.now()
+            )
+            reminderHistoryRepository.save(history)
+            logger.debug("Saved reminder history for ${reminder.contactEmail}: status=$status")
+        } catch (e: Exception) {
+            logger.warn("Failed to save reminder history (non-fatal): ${e.message}")
         }
     }
 }

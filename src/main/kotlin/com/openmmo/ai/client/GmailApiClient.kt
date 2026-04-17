@@ -247,6 +247,37 @@ class GmailApiClient(
             throw e
         }
     }
+
+    /**
+     * Get thread details (metadata format - lightweight)
+     * Includes message IDs, timestamps, and headers
+     */
+    fun getThread(accessToken: String, threadId: String): Map<String, Any> {
+        logger.debug("Fetching thread: $threadId (metadata format)")
+
+        try {
+            // format=metadata returns only headers (lightweight)
+            val url = "$gmailApiBase/threads/$threadId?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date"
+            val headers = HttpHeaders().apply {
+                set("Authorization", "Bearer $accessToken")
+            }
+            val request = HttpEntity<String>(headers)
+
+            @Suppress("UNCHECKED_CAST")
+            val response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                request,
+                Map::class.java
+            ).body as? Map<String, Any> ?: throw IllegalStateException("No response from Gmail API")
+
+            logger.debug("Thread fetched: $threadId")
+            return response
+        } catch (e: Exception) {
+            logger.error("Failed to get thread $threadId: ${e.message}")
+            throw e
+        }
+    }
 }
 
 

@@ -111,12 +111,36 @@ class GmailAutoReplyServiceImpl(
             logger.debug("Bot trigger subject: $triggerSubject for user: $userId")
 
             // 3. Get unreplied emails (with optional trigger subject filter)
-            // If triggerSubject is empty/blank, reply to ALL emails (with skip rules as safety net)
+            // Smart filters to only process emails from real people (no bots/mailing lists/auto-generated)
+            // Get user email address for self-email filter
+            val connection = connectionRepository.findByUserId(userId)
+            val userEmail = connection?.gmailAddress?.lowercase() ?: ""
+
+            // Build filters:
+            // - newer_than:30d: only recent emails (active contacts)
+            // - -is:mailing-list: exclude mailing lists
+            // - -category:promotions/updates/forums/social: exclude Gmail auto-categories
+            // - -from: exclude noreply, no-reply, donotreply, do-not-reply, mailer-daemon, postmaster
+            // - -subject: exclude emails with "do not reply" or "unsubscribe"
+            // - -label: exclude emails already replied by bot
+            // - -from:userEmail: exclude emails from self (prevent self-reply)
+            val baseQuery = buildString {
+                append("newer_than:30d ")
+                append("-is:mailing-list ")
+                append("-category:promotions -category:updates -category:forums -category:social ")
+                append("-from:(noreply OR \"no-reply\" OR donotreply OR \"do-not-reply\" OR \"mailer-daemon\" OR postmaster) ")
+                append("-subject:(\"do not reply\" OR unsubscribe) ")
+                append("-label:$AI_BOT_REPLY_LABEL")
+                if (userEmail.isNotEmpty()) {
+                    append(" -from:\"$userEmail\"")  // Exclude emails from self
+                }
+            }
+
             val query = if (triggerSubject.isNotBlank()) {
-                "subject:${triggerSubject.lowercase()} -label:$AI_BOT_REPLY_LABEL is:unread"
+                "subject:${triggerSubject.lowercase()} $baseQuery"
             } else {
-                logger.warn("⚠️ triggerSubject is blank - will reply to ALL emails (using skip rules for safety)")
-                "-label:$AI_BOT_REPLY_LABEL is:unread"
+                logger.warn("⚠️ triggerSubject is blank - will reply to ALL emails from real people (with skip rules + smart filters)")
+                baseQuery
             }
             val messageIds = gmailApiService.searchMessages(userId, query, maxResults = 10)
             logger.info("Found ${messageIds.size} unreplied emails matching trigger for user: $userId")

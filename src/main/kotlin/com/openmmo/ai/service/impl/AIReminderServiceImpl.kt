@@ -25,12 +25,12 @@ class AIReminderServiceImpl(
 
     override fun generateReminderMessage(
         contactEmail: String,
-        profileSummary: String,
+        conversationContext: String?,
         aiProvider: String  // Default to Groq
     ): String {
         return try {
             val aiService = getAiServiceForProvider(aiProvider)
-            val prompt = buildReminderPrompt(contactEmail, profileSummary)
+            val prompt = buildReminderPrompt(contactEmail, conversationContext)
             logger.debug("Generating reminder message for: $contactEmail using provider: $aiProvider")
 
             val message = aiService.generateText(prompt)
@@ -39,68 +39,45 @@ class AIReminderServiceImpl(
             message.trim()
         } catch (e: Exception) {
             logger.error("Failed to generate reminder message for $contactEmail using $aiProvider: ${e.message}", e)
-            buildFallbackMessage(profileSummary)
+            buildFallbackMessage(conversationContext)
         }
     }
 
     private fun buildReminderPrompt(
         contactEmail: String,
-        profileSummary: String
+        conversationContext: String?
     ): String {
-        return if (profileSummary.isNotBlank()) {
-            """
-You are a professional but friendly email assistant. Generate a personalized follow-up email.
+        return buildString {
+            append("You are a concise email assistant. Write a friendly follow-up reminder email body.\n\n")
+            append("RULES:\n")
+            append("- Output ONLY the email body (no greeting, no closing signature, no subject).\n")
+            append("- 2 to 5 sentences. Natural, polite, not salesy.\n")
+            append("- Do NOT invent facts. If details are missing, keep it generic.\n")
+            append("- Do NOT quote long text. No bullet lists unless absolutely necessary.\n\n")
 
-Contact: $contactEmail
-Previous conversation summary: $profileSummary
+            append("TARGET CONTACT: $contactEmail\n\n")
 
-Guidelines:
-- Reference the previous conversation naturally
-- Show genuine interest in following up
-- Offer specific help based on the conversation context
-- Keep tone warm and professional
-- Keep it concise (2-3 sentences)
-- Write as a natural email, not a template
-- Do NOT include greeting/salutation (just the body)
-- Do NOT include closing signature (just the body)
-
-Generate ONLY the email body:
-            """.trimIndent()
-        } else {
-            """
-You are a professional email assistant. Generate a warm follow-up email for someone we haven't heard from in a while.
-
-Contact: $contactEmail
-
-Guidelines:
-- Keep it warm and professional
-- Show genuine interest in reconnecting
-- Offer help without being pushy
-- Keep it concise (2-3 sentences)
-- Do NOT include greeting/salutation (just the body)
-- Do NOT include closing signature (just the body)
-
-Generate ONLY the email body:
-            """.trimIndent()
+            append("RECENT CONVERSATION CONTEXT (may be truncated):\n")
+            if (!conversationContext.isNullOrBlank()) {
+                append(conversationContext)
+            } else {
+                append("(none)")
+            }
         }
     }
 
-    private fun buildFallbackMessage(profileSummary: String): String {
-        return if (profileSummary.isNotBlank()) {
+    private fun buildFallbackMessage(conversationContext: String?): String {
+        return if (!conversationContext.isNullOrBlank()) {
             """
-It's been a while since we last connected. I was thinking about our previous conversation regarding $profileSummary, and I wanted to reach out to see how things are going.
+It's been a while since we last connected. I was thinking about our previous conversation and wanted to reach out to see how things are going.
 
 Is there anything I can help you with or any follow-up you'd like to discuss?
-
-Looking forward to hearing from you!
             """.trimIndent()
         } else {
             """
 It's been a while, and I wanted to reach out to check in with you. I hope everything is going well.
 
 Is there anything I can help you with?
-
-Looking forward to connecting again!
             """.trimIndent()
         }
     }
