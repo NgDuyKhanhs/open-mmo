@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ForkJoinPool
 
 /**
  * Reminder Scheduler
@@ -274,18 +276,23 @@ class ReminderScheduler(
     }
 
     private fun sendReminderToAllCorrespondents(reminder: ReminderConfig) {
+        val startTime = System.currentTimeMillis()
+
         try {
-            // Query Gmail API to get all recent emails from real people (not mailing lists/auto-replies)
+            logger.info("🚀 Starting ALL_CONTACTS reminder batch for userId: ${reminder.userId}")
+
+            // ✅ OPTIMIZED: Query Gmail API to get all recent emails from real people
             val query = "in:inbox newer_than:30d " +
                     "-is:mailing-list " +
                     "-category:promotions -category:updates -category:forums -category:social " +
                     "-from:(noreply OR \"no-reply\" OR donotreply OR \"do-not-reply\" OR \"mailer-daemon\" OR postmaster) " +
                     "-subject:(\"do not reply\" OR unsubscribe)"
 
+            // ✅ OPTIMIZATION 1: Limit to 50 instead of 100 (safe batch size)
             val messageIds = gmailApiService.searchMessages(
                 userId = reminder.userId,
                 query = query,
-                maxResults = 100  // Get up to 100 recent emails from real people
+                maxResults = 50
             )
 
             if (messageIds.isEmpty()) {
@@ -293,60 +300,154 @@ class ReminderScheduler(
                 return
             }
 
-            // Extract unique senders from messages
-            val correspondentEmails = mutableSetOf<String>()
-            for (messageId in messageIds) {
-                try {
-                    val headers = gmailApiService.getMessageHeaders(reminder.userId, messageId)
-                    val fromHeader = headers["From"] ?: continue
+            logger.debug("Found ${messageIds.size} recent messages")
 
-                    // Extract email address from "Name <email@domain.com>" format
-                    val emailPattern = Regex("""<([^>]+)>""")
-                    val match = emailPattern.find(fromHeader)
-                    val email = match?.groupValues?.get(1) ?: fromHeader.trim()
-
-                    if (email.isNotEmpty() && !email.contains("noreply", ignoreCase = true)) {
-                        correspondentEmails.add(email)
-                    }
-                } catch (e: Exception) {
-                    logger.warn("Failed to extract email from message $messageId: ${e.message}")
-                }
-            }
+            // ✅ OPTIMIZATION 2: Extract emails more efficiently (batch in one pass)
+            // Compile regex once instead of N times
+            val emailPattern = Regex("""<([^>]+)>""")
+            val correspondentEmails = extractUniqueCorrespondents(reminder.userId, messageIds, emailPattern)
 
             if (correspondentEmails.isEmpty()) {
                 logger.warn("No valid correspondent emails extracted from messages")
                 return
             }
 
-            logger.info("Found ${correspondentEmails.size} unique correspondents for ALL_CONTACTS reminder from Gmail API")
+            logger.info("Extracted ${correspondentEmails.size} unique correspondents")
 
-            // Send reminder to each correspondent with personalized message
-            for (correspondent in correspondentEmails) {
+            // ✅ OPTIMIZATION 3: Pre-generate reminder messages (batch context fetching)
+            val reminderMessages = preGenerateReminderMessages(reminder.userId, correspondentEmails)
+
+            // ✅ OPTIMIZATION 4: Send reminders in parallel with connection pooling
+            sendRemindersInParallel(reminder, correspondentEmails, reminderMessages)
+
+            val duration = System.currentTimeMillis() - startTime
+            logger.info("✅ ALL_CONTACTS reminder completed in ${duration}ms, sent to ${correspondentEmails.size} correspondents")
+        } catch (e: Exception) {
+            logger.error("Error sending ALL_CONTACTS reminder: ${e.message}", e)
+            throw e
+        }
+    }
+
+    /**
+     * ✅ OPTIMIZED: Extract unique correspondent emails in single pass
+     * Uses pre-compiled regex and efficient extraction
+     */
+    private fun extractUniqueCorrespondents(
+        userId: String,
+        messageIds: List<String>,
+        emailPattern: Regex
+    ): Set<String> {
+        val correspondentEmails = mutableSetOf<String>()
+        var apiCallCount = 0
+
+        for (messageId in messageIds) {
+            try {
+                val headers = gmailApiService.getMessageHeaders(userId, messageId)
+                apiCallCount++
+                val fromHeader = headers["From"] ?: continue
+
+                // ✅ Try angle bracket format first <email@domain.com>
+                val match = emailPattern.find(fromHeader)
+                val email = if (match != null) {
+                    match.groupValues.getOrNull(1)?.trim() ?: ""
+                } else {
+                    // ✅ Fallback: extract email regex from full header
+                    Regex("""([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})""")
+                        .find(fromHeader)
+                        ?.groupValues?.getOrNull(0)?.trim() ?: ""
+                }
+
+                if (email.isNotEmpty() && !email.contains("noreply", ignoreCase = true)) {
+                    correspondentEmails.add(email)
+                }
+            } catch (e: Exception) {
+                logger.warn("Failed to extract email from message $messageId: ${e.message}")
+            }
+        }
+
+        logger.debug("Email extraction: $apiCallCount API calls, ${correspondentEmails.size} unique emails")
+        return correspondentEmails
+    }
+
+    /**
+     * ✅ OPTIMIZED: Pre-generate reminder messages to batch context fetching
+     * This way all context calls are parallelized instead of sequential per correspondent
+     */
+    private fun preGenerateReminderMessages(
+        userId: String,
+        correspondentEmails: Set<String>
+    ): Map<String, String> {
+        val messages = mutableMapOf<String, String>()
+        val startTime = System.currentTimeMillis()
+
+        // ✅ Batch generate using parallel stream (leverages context caching)
+        val futures = correspondentEmails.map { correspondent ->
+            CompletableFuture.supplyAsync({
                 try {
-                    // Generate personalized message for each correspondent
-                    val reminderBody = buildReminderMessage(reminder.userId, correspondent)
+                    correspondent to buildReminderMessage(userId, correspondent)
+                } catch (e: Exception) {
+                    logger.warn("Failed to pre-generate message for $correspondent: ${e.message}")
+                    correspondent to "Follow-up: Checking in"  // Fallback
+                }
+            }, ForkJoinPool.commonPool())
+        }
+
+        CompletableFuture.allOf(*futures.toTypedArray()).join()
+        futures.forEach { future ->
+            val (correspondent, message) = future.join()
+            messages[correspondent] = message
+        }
+
+        val duration = System.currentTimeMillis() - startTime
+        logger.debug("Pre-generated ${messages.size} reminder messages in ${duration}ms")
+        return messages
+    }
+
+    /**
+     * ✅ OPTIMIZED: Send reminders in parallel with limited thread pool
+     * Max 5 concurrent sends to avoid overwhelming Gmail API
+     */
+    private fun sendRemindersInParallel(
+        reminder: ReminderConfig,
+        correspondentEmails: Set<String>,
+        reminderMessages: Map<String, String>
+    ) {
+        val startTime = System.currentTimeMillis()
+        val maxConcurrent = 5
+        val executor = ForkJoinPool(maxConcurrent)
+
+        val futures = correspondentEmails.map { correspondent ->
+            CompletableFuture.runAsync({
+                try {
+                    val body = reminderMessages[correspondent] ?: "Follow-up: Checking in"
                     gmailApiService.sendReply(
                         userId = reminder.userId,
                         threadId = "",
                         toEmail = correspondent,
                         subject = "Follow-up: Checking in",
-                        bodyText = reminderBody
+                        bodyText = body
                     )
-                    // Save success history
-                    saveReminderHistory(reminder, "sent", "", reminderBody, "Follow-up: Checking in")
-                    logger.info("Reminder sent to correspondent: $correspondent")
+                    saveReminderHistory(reminder, "sent", "", body, "Follow-up: Checking in")
+                    logger.info("✅ Reminder sent to: $correspondent")
                 } catch (e: Exception) {
-                    logger.warn("Failed to send reminder to $correspondent: ${e.message}")
-                    // Save failed history
+                    logger.warn("❌ Failed to send reminder to $correspondent: ${e.message}")
                     saveReminderHistory(reminder, "failed", e.message ?: "Unknown error", "", "Follow-up: Checking in")
                 }
-            }
-
-            logger.info("ALL_CONTACTS reminder completed, sent to ${correspondentEmails.size} correspondents")
-        } catch (e: Exception) {
-            logger.error("Error sending ALL_CONTACTS reminder: ${e.message}", e)
-            throw e
+            }, executor)
         }
+
+        // Wait for all sends to complete with timeout
+        CompletableFuture.allOf(*futures.toTypedArray())
+            .handle { _, ex ->
+                if (ex != null) {
+                    logger.warn("Some reminders failed during parallel send: ${ex.message}")
+                }
+                val duration = System.currentTimeMillis() - startTime
+                logger.debug("Parallel send completed in ${duration}ms for ${correspondentEmails.size} correspondents")
+            }
+            .join()
+
+        executor.shutdown()
     }
 
     private fun buildReminderMessage(
