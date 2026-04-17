@@ -4,6 +4,7 @@ import com.openmmo.ai.service.IGmailAutoReplyService
 import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IGmailBotService
 import com.openmmo.ai.service.ICorrespondentMemoryService
+import com.openmmo.ai.service.IConversationContextService
 import com.openmmo.ai.service.IGeminiAiService
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.repository.GmailConnectionRepository
@@ -14,7 +15,8 @@ import org.springframework.beans.factory.annotation.Qualifier
 /**
  * Gmail Auto-Reply Service Implementation
  * Automatically generates and sends replies to emails matching trigger conditions
- * Uses user's selected AI provider (Groq for speed/cost, Gemini for quality)
+ * Uses user's selected AI provider (Gemini for quality, Groq for speed/cost)
+ * Fetches conversation context directly from Gmail thread (no DB correspondent_memory table needed)
  */
 @Service
 class GmailAutoReplyServiceImpl(
@@ -23,6 +25,7 @@ class GmailAutoReplyServiceImpl(
     private val botConfigRepository: GmailBotConfigRepository,
     private val connectionRepository: GmailConnectionRepository,
     private val correspondentMemoryService: ICorrespondentMemoryService,
+    private val conversationContextService: IConversationContextService,
     @Qualifier("groqAiServiceImpl")
     private val groqAiService: IGeminiAiService,
     @Qualifier("geminiAiServiceImpl")
@@ -177,22 +180,29 @@ class GmailAutoReplyServiceImpl(
                         if (shouldSkipEmail(emailFrom, finalSubject, emailContent, headers, userId)) {
                             logger.info("Skipping email $messageId for user $userId due to skip rules")
                         } else {
-                            // Load memory for this correspondent
-                            val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
-                            val memoryContext = correspondentMemoryService.buildMemoryContextText(memory)
+                            // ✅ NEW: Get conversation context from Gmail thread (similar to reminder system)
+                            // Step 1: Try to get context from Gmail thread directly
+                            val gmailThreadContext = conversationContextService.getContextForReminder(userId, emailFrom)
+
+                            // Step 2: Fallback to correspondent memory if Gmail context not available
+                            val conversationContext = gmailThreadContext ?: run {
+                                logger.debug("Gmail thread context unavailable, trying correspondent memory fallback")
+                                val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
+                                correspondentMemoryService.buildMemoryContextText(memory)
+                            }
 
                             // Get user's selected AI provider and custom prompt
                             val botConfig = botConfigRepository.findByUserId(userId)
-                            val selectedProvider = botConfig?.aiProvider?.lowercase() ?: "groq"
+                            val selectedProvider = botConfig?.aiProvider?.lowercase() ?: "gemini"
                             val customPrompt = botConfig?.customPrompt?.takeIf { it.isNotBlank() }
                             logger.debug("Using AI provider: $selectedProvider for user: $userId")
 
                             // Generate AI reply with selected provider
-                            logger.debug("Generating AI reply with memory for: $messageId")
+                            logger.debug("Generating AI reply with conversation context for: $messageId")
                             var aiReply: String
                             try {
                                 val aiService = getAiServiceForProvider(selectedProvider)
-                                val fullPrompt = buildPromptWithMemory(emailContent, memoryContext, customPrompt)
+                                val fullPrompt = buildPromptWithMemory(emailContent, conversationContext, customPrompt)
                                 aiReply = aiService.generateText(fullPrompt)
                                 logger.debug("AI reply generated via $selectedProvider, length: ${aiReply.length}")
                             } catch (e: Exception) {
