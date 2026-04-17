@@ -18,6 +18,7 @@ export function useReminders() {
     contactEmail: string
     enabled: boolean
     afterInactive: number
+    repeatEvery: number
     maxReminders: number
     sentCount: number
   }
@@ -30,6 +31,7 @@ export function useReminders() {
     contactEmail: '',
     enabled: true,
     afterInactive: 60,
+    repeatEvery: 1440,
     maxReminders: 5,
     sentCount: 0,
   })
@@ -43,10 +45,12 @@ export function useReminders() {
   const visibleOptionalFields = ref<{
     contactEmail: boolean
     maxReminders: boolean
+    repeatEvery: boolean
     enabled: boolean
   }>({
     contactEmail: false,
     maxReminders: false,
+    repeatEvery: false,
     enabled: false,
   })
 
@@ -109,61 +113,66 @@ export function useReminders() {
     }
   }
 
-  // Save reminder
-  const saveReminder = async () => {
-    if (!newReminder.value.afterInactive || newReminder.value.afterInactive < 5) {
-      toast.error('Remind after inactivity must be at least 5 minutes')
-      return
-    }
+   // Save reminder
+   const saveReminder = async () => {
+     if (!newReminder.value.afterInactive || newReminder.value.afterInactive < 5) {
+       toast.error('Remind after inactivity must be at least 5 minutes')
+       return
+     }
 
-    if (visibleOptionalFields.value.maxReminders && (!newReminder.value.maxReminders || newReminder.value.maxReminders < 1)) {
-      toast.error('Max reminders must be at least 1')
-      return
-    }
+     if (visibleOptionalFields.value.repeatEvery && (!newReminder.value.repeatEvery || newReminder.value.repeatEvery < 1)) {
+       toast.error('Repeat every must be at least 1 minute')
+       return
+     }
 
-    if (visibleOptionalFields.value.contactEmail && !newReminder.value.contactEmail.trim()) {
-      toast.error('Please enter a contact email or uncheck "Apply to Specific Contact"')
-      return
-    }
+     if (visibleOptionalFields.value.maxReminders && (!newReminder.value.maxReminders || newReminder.value.maxReminders < 1)) {
+       toast.error('Max reminders must be at least 1')
+       return
+     }
 
-    isSavingReminder.value = true
-    try {
-      if (!authStore.accessToken) return
+     if (visibleOptionalFields.value.contactEmail && !newReminder.value.contactEmail.trim()) {
+       toast.error('Please enter a contact email or uncheck "Apply to Specific Contact"')
+       return
+     }
 
-      const reminderData: ReminderConfig = {
-        contactEmail: visibleOptionalFields.value.contactEmail ? newReminder.value.contactEmail : '',
-        enabled: visibleOptionalFields.value.enabled ? newReminder.value.enabled : true,
-        afterInactive: newReminder.value.afterInactive,
-        maxReminders: visibleOptionalFields.value.maxReminders ? newReminder.value.maxReminders : 5,
-        sentCount: newReminder.value.sentCount || 0,
-      }
+     isSavingReminder.value = true
+     try {
+       if (!authStore.accessToken) return
 
-      if (editingReminderId.value) {
-        const result = await updateReminder(authStore.accessToken, editingReminderId.value, reminderData)
-        if (result.status === 'success') {
-          toast.success(result.message)
-          await loadReminders()
-          resetReminderForm()
-        } else {
-          toast.error(result.message || 'Failed to update reminder')
-        }
-      } else {
-        const result = await createReminder(authStore.accessToken, reminderData)
-        if (result.status === 'success') {
-          toast.success(result.message)
-          await loadReminders()
-          resetReminderForm()
-        } else {
-          toast.error(result.message || 'Failed to create reminder')
-        }
-      }
-    } catch (err) {
-      console.error('Failed to save reminder:', err)
-      toast.error(err instanceof Error ? err.message : 'Error saving reminder')
-    } finally {
-      isSavingReminder.value = false
-    }
-  }
+       const reminderData: ReminderConfig = {
+         contactEmail: visibleOptionalFields.value.contactEmail ? newReminder.value.contactEmail : '',
+         enabled: visibleOptionalFields.value.enabled ? newReminder.value.enabled : true,
+         afterInactive: newReminder.value.afterInactive,
+         repeatEvery: visibleOptionalFields.value.repeatEvery ? newReminder.value.repeatEvery : 1440,
+         maxReminders: visibleOptionalFields.value.maxReminders ? newReminder.value.maxReminders : 5,
+       }
+
+       if (editingReminderId.value) {
+         const result = await updateReminder(authStore.accessToken, editingReminderId.value, reminderData)
+         if (result.status === 'success') {
+           toast.success(result.message)
+           await loadReminders()
+           resetReminderForm()
+         } else {
+           toast.error(result.message || 'Failed to update reminder')
+         }
+       } else {
+         const result = await createReminder(authStore.accessToken, reminderData)
+         if (result.status === 'success') {
+           toast.success(result.message)
+           await loadReminders()
+           resetReminderForm()
+         } else {
+           toast.error(result.message || 'Failed to create reminder')
+         }
+       }
+     } catch (err) {
+       console.error('Failed to save reminder:', err)
+       toast.error(err instanceof Error ? err.message : 'Error saving reminder')
+     } finally {
+       isSavingReminder.value = false
+     }
+   }
 
   // Delete reminder
   const showDeleteConfirmPopup = (contactEmail: string) => {
@@ -196,54 +205,58 @@ export function useReminders() {
     deleteConfirmEmail.value = ''
   }
 
-  // Edit reminder
-  const editReminder = async (reminder: ReminderConfig) => {
-    showReminderForm.value = true
+   // Edit reminder
+   const editReminder = async (reminder: ReminderConfig) => {
+     showReminderForm.value = true
 
-    if (reminder.contactEmail) {
-      if (contactsList.value.length === 0) {
-        await loadContacts()
-      }
+     if (reminder.contactEmail) {
+       if (contactsList.value.length === 0) {
+         await loadContacts()
+       }
 
-      if (!contactsList.value.includes(reminder.contactEmail)) {
-        contactsList.value = [reminder.contactEmail, ...contactsList.value]
-      }
-    }
+       if (!contactsList.value.includes(reminder.contactEmail)) {
+         contactsList.value = [reminder.contactEmail, ...contactsList.value]
+       }
+     }
 
-    newReminder.value = {
-      contactEmail: reminder.contactEmail || '',
-      enabled: reminder.enabled,
-      afterInactive: reminder.afterInactive,
-      maxReminders: reminder.maxReminders,
-      sentCount: 0,
-    }
+     newReminder.value = {
+       contactEmail: reminder.contactEmail || '',
+       enabled: reminder.enabled,
+       afterInactive: reminder.afterInactive,
+       repeatEvery: reminder.repeatEvery || 1440,
+       maxReminders: reminder.maxReminders,
+       sentCount: 0,
+     }
 
-    editingReminderId.value = reminder.contactEmail
+     editingReminderId.value = reminder.contactEmail
 
-    visibleOptionalFields.value = {
-      contactEmail: reminder.contactEmail.trim().length > 0,
-      maxReminders: reminder.maxReminders !== null && reminder.maxReminders !== undefined,
-      enabled: reminder.enabled !== null && reminder.enabled !== undefined,
-    }
-  }
+     visibleOptionalFields.value = {
+       contactEmail: reminder.contactEmail.trim().length > 0,
+       maxReminders: reminder.maxReminders !== null && reminder.maxReminders !== undefined,
+       repeatEvery: reminder.repeatEvery !== null && reminder.repeatEvery !== undefined && reminder.repeatEvery !== 1440,
+       enabled: reminder.enabled !== null && reminder.enabled !== undefined,
+     }
+   }
 
-  // Reset form
-  const resetReminderForm = () => {
-    newReminder.value = {
-      contactEmail: '',
-      enabled: true,
-      afterInactive: 60,
-      maxReminders: 5,
-      sentCount: 0,
-    }
-    editingReminderId.value = null
-    showReminderForm.value = false
-    visibleOptionalFields.value = {
-      contactEmail: false,
-      maxReminders: false,
-      enabled: false,
-    }
-  }
+   // Reset form
+   const resetReminderForm = () => {
+     newReminder.value = {
+       contactEmail: '',
+       enabled: true,
+       afterInactive: 60,
+       repeatEvery: 1440,
+       maxReminders: 5,
+       sentCount: 0,
+     }
+     editingReminderId.value = null
+     showReminderForm.value = false
+     visibleOptionalFields.value = {
+       contactEmail: false,
+       maxReminders: false,
+       repeatEvery: false,
+       enabled: false,
+     }
+   }
 
   const toggleReminderForm = () => {
     if (showReminderForm.value) {

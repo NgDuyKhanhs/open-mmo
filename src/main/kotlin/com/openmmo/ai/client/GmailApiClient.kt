@@ -88,37 +88,75 @@ class GmailApiClient(
         }
     }
 
-    /**
-     * Get message metadata only (minimal fields for listing)
-     * Fetches: From, Subject, Date, Snippet, Labels
-     * ~80% smaller payload than full message
-     */
-    fun getMessageMetadata(accessToken: String, messageId: String): Map<String, Any> {
-        logger.debug("Fetching message metadata: $messageId")
+     /**
+      * Get message headers only (optimized - metadata format)
+      * Fetches only headers without full message body
+      * ~95% smaller payload than full message
+      * Useful for: extracting subject, from, to, date, reply-to, etc.
+      */
+     fun getMessageHeaders(accessToken: String, messageId: String): Map<String, Any> {
+         logger.debug("Fetching message headers (metadata format): $messageId")
 
-        try {
-            // format=metadata only returns headers specified in metadataHeaders
-            val url = "$gmailApiBase/messages/$messageId?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date"
-            val headers = HttpHeaders().apply {
-                set("Authorization", "Bearer $accessToken")
-            }
-            val request = HttpEntity<String>(headers)
+         try {
+             // format=metadata with full list of common headers - much lighter than full message
+             val metadataHeaders = listOf(
+                 "From", "To", "Subject", "Date", "Reply-To", "Cc", "Bcc",
+                 "Content-Type", "Message-ID", "In-Reply-To", "References"
+             ).joinToString("&metadataHeaders=", prefix = "&metadataHeaders=")
+             
+             val url = "$gmailApiBase/messages/$messageId?format=metadata$metadataHeaders"
+             val headers = HttpHeaders().apply {
+                 set("Authorization", "Bearer $accessToken")
+             }
+             val request = HttpEntity<String>(headers)
 
-            @Suppress("UNCHECKED_CAST")
-            val response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                request,
-                Map::class.java
-            ).body as? Map<String, Any> ?: throw IllegalStateException("No response from Gmail API")
+             @Suppress("UNCHECKED_CAST")
+             val response = restTemplate.exchange(
+                 url,
+                 HttpMethod.GET,
+                 request,
+                 Map::class.java
+             ).body as? Map<String, Any> ?: throw IllegalStateException("No response from Gmail API")
 
-            logger.debug("Message metadata fetched: $messageId")
-            return response
-        } catch (e: Exception) {
-            logger.error("Failed to get message metadata: ${e.message}")
-            throw e
-        }
-    }
+             logger.debug("Message headers fetched (metadata format): $messageId")
+             return response
+         } catch (e: Exception) {
+             logger.error("Failed to get message headers: ${e.message}")
+             throw e
+         }
+     }
+
+     /**
+      * Get message metadata only (minimal fields for listing)
+      * Fetches: From, Subject, Date, Snippet, Labels
+      * ~80% smaller payload than full message
+      */
+     fun getMessageMetadata(accessToken: String, messageId: String): Map<String, Any> {
+         logger.debug("Fetching message metadata: $messageId")
+
+         try {
+             // format=metadata only returns headers specified in metadataHeaders
+             val url = "$gmailApiBase/messages/$messageId?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date"
+             val headers = HttpHeaders().apply {
+                 set("Authorization", "Bearer $accessToken")
+             }
+             val request = HttpEntity<String>(headers)
+
+             @Suppress("UNCHECKED_CAST")
+             val response = restTemplate.exchange(
+                 url,
+                 HttpMethod.GET,
+                 request,
+                 Map::class.java
+             ).body as? Map<String, Any> ?: throw IllegalStateException("No response from Gmail API")
+
+             logger.debug("Message metadata fetched: $messageId")
+             return response
+         } catch (e: Exception) {
+             logger.error("Failed to get message metadata: ${e.message}")
+             throw e
+         }
+     }
 
     /**
      * Send message (reply)

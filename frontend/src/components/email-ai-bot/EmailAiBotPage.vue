@@ -38,6 +38,7 @@ const showPromptHelp = ref(false)
 const showSubjectKeywordWarning = ref(false)
 const showEmailPreviewModal = ref(false)
 const showDeleteConfirm = ref(false)
+const showReminderHelp = ref(false)
 const deleteConfirmEmail = ref<string>('')
 const showReminderHistory = ref(false)
 const historyDetailModal = ref<ReminderHistory | null>(null)
@@ -409,6 +410,13 @@ const saveConfigAndReload = async () => {
               <div class="reminder-form-container">
                 <div class="new-reminder-header">
                   <h4 class="new-reminder-title">Create reminder</h4>
+<!--                  <button-->
+<!--                    @click="showReminderHelp = true"-->
+<!--                    class="help-icon-btn"-->
+<!--                    title="How reminders work"-->
+<!--                  >-->
+<!--                    ?-->
+<!--                  </button>-->
                 </div>
 
                 <div class="form-section">
@@ -456,6 +464,26 @@ const saveConfigAndReload = async () => {
                             {{ contact }}
                           </option>
                         </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label class="toggle-option">
+                        <input
+                          v-model="reminders.visibleOptionalFields.value.repeatEvery"
+                          type="checkbox"
+                        />
+                        <span>Set repeat interval</span>
+                      </label>
+                      <div v-if="reminders.visibleOptionalFields.value.repeatEvery" class="optional-input">
+                        <input
+                          v-model.number="reminders.newReminder.value.repeatEvery"
+                          type="number"
+                          min="1"
+                          placeholder="e.g., 1440 (24 hours)"
+                          class="form-input"
+                        />
+                        <p class="form-description">Minutes between repeat reminders (default: 1440 = 24 hours)</p>
                       </div>
                     </div>
 
@@ -518,7 +546,8 @@ const saveConfigAndReload = async () => {
                       <tr>
                         <th class="col-email">EMAIL</th>
                         <th class="col-status">STATUS</th>
-                        <th class="col-schedule">SCHEDULE</th>
+                        <th class="col-schedule">WAIT (min)</th>
+                        <th class="col-repeat">REPEAT (min)</th>
                         <th class="col-max">REMINDERS</th>
                         <th class="col-actions">ACTIONS</th>
                       </tr>
@@ -531,7 +560,8 @@ const saveConfigAndReload = async () => {
                             {{ reminder.enabled ? '● Active' : '● Inactive' }}
                           </span>
                         </td>
-                        <td class="schedule-cell col-schedule">Every {{ reminder.afterInactive }}m</td>
+                        <td class="schedule-cell col-schedule">{{ reminder.afterInactive }}</td>
+                        <td class="schedule-cell col-repeat">{{ reminder.repeatEvery || 1440 }}</td>
                         <td
                           :class="['max-cell', 'col-max', { 'max-reached': reminder.sentCount >= reminder.maxReminders }]"
                         >
@@ -804,6 +834,76 @@ const saveConfigAndReload = async () => {
                 <button @click="reminders.cancelDelete()" class="btn btn-secondary">
                   Cancel
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reminder Help Modal -->
+        <div v-if="showReminderHelp" class="modal-overlay">
+          <div class="modal-container reminder-help-modal" style="max-width: 600px;">
+            <div class="modal-header">
+              <h3 class="modal-title">How Reminders Work</h3>
+              <button @click="showReminderHelp = false" class="close-button">
+                <X :size="18" />
+              </button>
+            </div>
+
+            <div class="modal-content">
+              <div class="help-section">
+                <h4 class="help-title">📋 First Reminder</h4>
+                <p class="help-text">
+                  <strong>Remind after inactivity:</strong> Bot waits for this many minutes of conversation inactivity before sending the first reminder.
+                </p>
+                <div class="help-example">
+                  <strong>Example:</strong> If set to 60 minutes, bot sends first reminder when user hasn't replied for 60+ minutes.
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h4 class="help-title">🔄 Repeat Reminders</h4>
+                <p class="help-text">
+                  <strong>Repeat every:</strong> After first reminder, bot sends follow-ups at this interval, regardless of conversation activity.
+                </p>
+                <div class="help-example">
+                  <strong>Example:</strong> If set to 1440 minutes (24 hours), bot sends reminder every day. Even if user replies, next reminder still sends 24 hours after the previous one.
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h4 class="help-title">🎯 Max Reminders</h4>
+                <p class="help-text">
+                  <strong>Maximum reminders:</strong> Total number of reminders to send before stopping.
+                </p>
+                <div class="help-example">
+                  <strong>Example:</strong> If set to 5, bot sends at most 5 reminders. After that, no more reminders are sent.
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h4 class="help-title">📅 Timeline Example</h4>
+                <div class="timeline-example">
+                  <div class="timeline-item">
+                    <span class="timeline-time">Day 1 - 11:00</span>
+                    <span class="timeline-event">Send Reminder #1 (after 60 min inactivity)</span>
+                  </div>
+                  <div class="timeline-item">
+                    <span class="timeline-time">Day 1 - 12:00</span>
+                    <span class="timeline-event">User replies (conversation active again)</span>
+                  </div>
+                  <div class="timeline-item">
+                    <span class="timeline-time">Day 2 - 11:00</span>
+                    <span class="timeline-event">Send Reminder #2 (24 hours after #1, even though user replied)</span>
+                  </div>
+                  <div class="timeline-item">
+                    <span class="timeline-time">Day 3-5 - 11:00</span>
+                    <span class="timeline-event">Send Reminders #3, #4, #5 (then stop)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="help-note">
+                💡 <strong>Note:</strong> Repeat interval is based on when bot sends reminders, not on conversation activity. This ensures regular follow-ups even if user keeps replying.
               </div>
             </div>
           </div>

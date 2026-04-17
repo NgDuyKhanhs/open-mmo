@@ -7,7 +7,7 @@ import EmailAiBotPage from '@/components/email-ai-bot/EmailAiBotPage.vue'
 import '@/styles/email-ai-bot.css'
 
 const { ensureLoggedInOrRedirect, handleOAuthCallback } = useAuthGuard()
-const { status, loadStatus } = useEmailBotStatus()
+const { status, loadStatus, connectGmail } = useEmailBotStatus()
 
 onMounted(async () => {
   const isLoggedIn = await ensureLoggedInOrRedirect()
@@ -56,9 +56,9 @@ onMounted(async () => {
                   <span class="feature-text">Message management</span>
                 </div>
               </div>
-              <button @click="loadStatus()" class="btn-connect-gmail">
-                Connect Gmail Account
-              </button>
+               <button @click="connectGmail" class="btn-connect-gmail">
+                 Connect Gmail Account
+               </button>
               <p class="not-connected-info">
                 We only access your emails to send automated replies. Your data is encrypted and secure.
               </p>

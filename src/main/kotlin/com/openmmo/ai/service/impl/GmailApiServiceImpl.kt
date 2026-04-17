@@ -96,33 +96,43 @@ class GmailApiServiceImpl(
                 logger.info("Applied subject filter: '$triggerSubject'")
             }
 
-            try {
-                @Suppress("UNCHECKED_CAST")
-                val response = gmailApiClient.listMessages(accessToken, query, pageSize, pageToken)
-                val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
-                val nextPageToken = response["nextPageToken"] as? String
-                return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime, boxType)
-            } catch (e: org.springframework.web.client.HttpClientErrorException) {
-                // If 401 Unauthorized, refresh token and retry
-                if (e.statusCode.value() == 401) {
-                    logger.warn("Access token expired (401), refreshing and retrying for user: $userId")
-                    val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
-                    // Force refresh by clearing cache and getting new token
-                    cache.remove(userId)
-                    accessToken = getAccessToken(connection)
+            var retryCount = 0
+            val maxRetries = 2
 
-                    // Retry the request with fresh token
+            while (retryCount <= maxRetries) {
+                try {
+                    logger.debug("Attempting to fetch mailbox page, retry=$retryCount/$maxRetries, box=$boxType")
                     @Suppress("UNCHECKED_CAST")
                     val response = gmailApiClient.listMessages(accessToken, query, pageSize, pageToken)
                     val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
                     val nextPageToken = response["nextPageToken"] as? String
-                    logger.info("Found ${messages.size} messages matching query (after retry)")
-
+                    logger.debug("Successfully fetched ${messages.size} messages after $retryCount retries")
                     return processMailboxMessages(userId, messages, nextPageToken, pageSize, startTime, boxType)
-                } else {
-                    throw e
+                } catch (e: org.springframework.web.client.HttpClientErrorException) {
+                    // If 401 Unauthorized, refresh token and retry
+                    if (e.statusCode.value() == 401 && retryCount < maxRetries) {
+                        logger.warn("Access token expired (401), attempt ${retryCount + 1}/$maxRetries - refreshing token for user: $userId")
+                        try {
+                            val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
+                            cache.remove(userId)
+                            accessToken = getAccessToken(connection)
+                            logger.debug("Token refreshed successfully, retrying mailbox fetch...")
+                            retryCount++
+                        } catch (refreshError: Exception) {
+                            logger.error("Failed to refresh access token during mailbox fetch: ${refreshError.message}", refreshError)
+                            throw refreshError
+                        }
+                    } else if (e.statusCode.value() == 401) {
+                        logger.error("Access token still invalid after $maxRetries retries for mailbox, user needs to reconnect: $userId")
+                        throw e
+                    } else {
+                        logger.error("HTTP error fetching mailbox: ${e.statusCode} - ${e.responseBodyAsString}")
+                        throw e
+                    }
                 }
             }
+
+            throw IllegalStateException("Failed to fetch mailbox page after $maxRetries retries")
         } catch (e: Exception) {
             logger.error("Error getting mailbox page: ${e.message}")
             throw e
@@ -201,27 +211,45 @@ class GmailApiServiceImpl(
             ?: throw IllegalStateException("Gmail not connected")
 
         var accessToken = getAccessToken(connection)
+        var retryCount = 0
+        val maxRetries = 2
 
-        try {
-            @Suppress("UNCHECKED_CAST")
-            val response = gmailApiClient.listMessages(accessToken, query, maxResults)
-            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
-            return messages.mapNotNull { it["id"] }
-        } catch (e: org.springframework.web.client.HttpClientErrorException) {
-            if (e.statusCode.value() == 401) {
-                logger.warn("Access token expired (401), refreshing and retrying for user: $userId")
-                val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
-                cache.remove(userId)
-                accessToken = getAccessToken(connection)
-
+        while (retryCount <= maxRetries) {
+            try {
+                logger.debug("Attempting to search messages, retry=$retryCount/$maxRetries")
                 @Suppress("UNCHECKED_CAST")
                 val response = gmailApiClient.listMessages(accessToken, query, maxResults)
                 val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+                logger.debug("Successfully fetched ${messages.size} messages after $retryCount retries")
                 return messages.mapNotNull { it["id"] }
-            } else {
+            } catch (e: org.springframework.web.client.HttpClientErrorException) {
+                if (e.statusCode.value() == 401 && retryCount < maxRetries) {
+                    logger.warn("Access token expired (401), attempt ${retryCount + 1}/$maxRetries - refreshing token for user: $userId")
+                    try {
+                        // Force refresh token
+                        val cache = tokenCache.get() ?: mutableMapOf<String, String>().also { tokenCache.set(it) }
+                        cache.remove(userId)
+                        accessToken = getAccessToken(connection)
+                        logger.debug("Token refreshed successfully, retrying...")
+                        retryCount++
+                    } catch (refreshError: Exception) {
+                        logger.error("Failed to refresh access token: ${refreshError.message}", refreshError)
+                        throw refreshError
+                    }
+                } else if (e.statusCode.value() == 401) {
+                    logger.error("Access token still invalid after $maxRetries retries, user needs to reconnect: $userId")
+                    throw e
+                } else {
+                    logger.error("HTTP error searching messages: ${e.statusCode} - ${e.responseBodyAsString}")
+                    throw e
+                }
+            } catch (e: Exception) {
+                logger.error("Unexpected error searching messages: ${e.message}", e)
                 throw e
             }
         }
+
+        throw IllegalStateException("Failed to search messages after $maxRetries retries")
     }
 
     override fun getMessageBody(userId: String, messageId: String): String {
@@ -238,7 +266,7 @@ class GmailApiServiceImpl(
             ?: throw IllegalStateException("Gmail not connected")
 
         val accessToken = getAccessToken(connection)
-        val response = gmailApiClient.getMessage(accessToken, messageId)
+        val response = gmailApiClient.getMessageHeaders(accessToken, messageId)
 
         return extractHeaders(response)
     }

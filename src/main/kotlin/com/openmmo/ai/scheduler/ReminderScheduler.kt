@@ -59,43 +59,64 @@ class ReminderScheduler(
     }
 
     private fun processReminder(reminder: ReminderConfig) {
+        val contactId = reminder.contactEmail
+
         // 1. Check if already sent max reminders
         if (reminder.sentCount >= reminder.maxReminders) {
-            logger.debug("Reminder ${reminder.contactEmail} already sent max reminders")
+            logger.debug("🎯 $contactId: Max reminders reached (${reminder.sentCount}/${reminder.maxReminders})")
             return
         }
 
-        // 2. Check if should send now (considering first time - no repeats)
+        // 2. Check if should send now (first time or repeat interval passed)
         if (!shouldSendNow(reminder)) {
-            logger.debug("Reminder ${reminder.contactEmail} not yet time to send")
+            logger.debug("⏸️  $contactId: Not time to send yet")
             return
         }
 
         // 3. Check if conversation is inactive long enough
-        if (!isInactiveEnough(reminder)) {
-            logger.debug("Reminder ${reminder.contactEmail} conversation still active")
+        // For first send: check afterInactive threshold
+        // For repeat: skip this check (user might have replied, but we still want to remind after repeatEvery)
+        val isFirstSend = reminder.lastSentAt == null
+        if (isFirstSend && !isInactiveEnough(reminder)) {
+            logger.debug("💬 $contactId: Conversation still too active, waiting...")
             return
         }
 
         // 4. Send reminder email
         try {
+            logger.info("🚀 $contactId: Sending reminder #${reminder.sentCount + 1}/${reminder.maxReminders} (afterInactive=${reminder.afterInactive}min, repeatEvery=${reminder.repeatEvery}min)")
             sendReminderEmail(reminder)
             updateReminderAfterSend(reminder)
         } catch (e: Exception) {
-            logger.error("Failed to send reminder for ${reminder.contactEmail}", e)
+            logger.error("❌ $contactId: Failed to send reminder - ${e.message}", e)
         }
     }
 
     private fun shouldSendNow(reminder: ReminderConfig): Boolean {
-        // Since repeatEvery is removed, reminder only sends once
+        // First time - never sent before
         if (reminder.lastSentAt == null) {
-            logger.debug("First time sending reminder for ${reminder.contactEmail}")
+            logger.debug("✉️  ${reminder.contactEmail}: First time (lastSentAt=null, sentCount=${reminder.sentCount})")
             return true
         }
 
-        // Already sent once, don't send again
-        logger.debug("Reminder ${reminder.contactEmail} already sent once, no repeat")
-        return false
+        // Already sent max number of reminders
+        if (reminder.sentCount >= reminder.maxReminders) {
+            logger.debug("🎯 ${reminder.contactEmail}: Max reminders reached (${reminder.sentCount}/${reminder.maxReminders})")
+            return false
+        }
+
+        // Check if enough time has passed for repeat
+        val minutesSinceLast = java.time.temporal.ChronoUnit.MINUTES.between(reminder.lastSentAt, LocalDateTime.now())
+        val shouldRepeat = minutesSinceLast >= reminder.repeatEvery
+
+        if (shouldRepeat) {
+            logger.debug("🔄 ${reminder.contactEmail}: Time for repeat reminder (lastSentAt=${reminder.lastSentAt}, sentCount=${reminder.sentCount}/${reminder.maxReminders}, minutesSinceLast=$minutesSinceLast >= repeatEvery=${reminder.repeatEvery})")
+            return true
+        } else {
+            val minutesUntilNext = reminder.repeatEvery - minutesSinceLast
+            logger.debug("⏱️  ${reminder.contactEmail}: Next repeat in ${minutesUntilNext}min (lastSentAt=${reminder.lastSentAt}, sentCount=${reminder.sentCount}/${reminder.maxReminders}, minutesSinceLast=$minutesSinceLast)")
+            return false
+        }
     }
 
     private fun isInactiveEnough(reminder: ReminderConfig): Boolean {
@@ -106,16 +127,17 @@ class ReminderScheduler(
             // Get last message time with this contact from Gmail
             val lastMessageTime = getLastMessageTimeFromGmail(reminder.userId, reminder.contactEmail)
             if (lastMessageTime == null) {
-                logger.debug("No messages found with $contactIdentifier, sending reminder")
+                logger.debug("No messages found with $contactIdentifier, ready to send reminder")
                 return true
             }
 
             val minutesSince = ChronoUnit.MINUTES.between(lastMessageTime, LocalDateTime.now())
             val isInactive = minutesSince >= reminder.afterInactive
-            logger.debug("Inactivity check: $contactIdentifier, minutesSince=$minutesSince, afterInactive=${reminder.afterInactive}, isInactive=$isInactive")
+            val reason = if (isInactive) "READY" else "TOO ACTIVE"
+            logger.debug("[$reason] Inactivity check for $contactIdentifier: minutesSince=$minutesSince, afterInactive=${reminder.afterInactive}, isInactive=$isInactive")
             return isInactive
         } catch (@Suppress("UNUSED_PARAMETER") e: Exception) {
-            logger.error("Error checking inactivity for ${reminder.contactEmail}")
+            logger.error("Error checking inactivity for ${reminder.contactEmail}", e)
             return false
         }
     }
