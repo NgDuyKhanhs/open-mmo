@@ -3,6 +3,7 @@ package com.openmmo.ai.service.impl
 import com.openmmo.ai.client.GmailApiClient
 import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.service.IConversationContextService
+import com.openmmo.ai.service.ILanguageDetectionService
 import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service
  * Responsibilities:
  * - Fetch recent emails from Gmail thread with a specific contact
  * - Build truncated conversation context for AI reminder generation
+ * - Detect language from contact's email only (person to be reminded)
  * - Minimize Gmail API calls (target: 8 calls max per context fetch)
  * - Cache context per (userId, contactEmail) for 15 minutes
  *
@@ -26,7 +28,8 @@ import org.springframework.stereotype.Service
 class ConversationContextServiceImpl(
     private val gmailApiClient: GmailApiClient,
     private val connectionRepository: GmailConnectionRepository,
-    private val gmailApiServiceImpl: GmailApiServiceImpl
+    private val gmailApiServiceImpl: GmailApiServiceImpl,
+    private val languageDetectionService: ILanguageDetectionService
 ) : IConversationContextService {
 
     companion object {
@@ -41,13 +44,14 @@ class ConversationContextServiceImpl(
     /**
      * Get conversation context for reminder generation
      * Cached for 15 minutes to avoid repeated Gmail API calls
+     * Detects the language from the contact's email (person to be reminded)
      */
     @Cacheable(
         cacheNames = ["reminderContext"],
         key = "'reminderContext:' + #userId + ':' + #contactEmail",
         unless = "#result == null"
     )
-    override fun getContextForReminder(userId: String, contactEmail: String): String? {
+    override fun getContextForReminder(userId: String, contactEmail: String): Pair<String?, String?>? {
         logger.debug("Fetching conversation context for user=$userId, contact=$contactEmail")
 
         return try {
@@ -81,7 +85,7 @@ class ConversationContextServiceImpl(
 
             // Step 4: Fetch body for each message
             val messages = lastMessageIds.mapNotNull { messageId ->
-                fetchMessageForContext(accessToken, messageId)
+                fetchMessageForContext(accessToken, messageId, contactEmail)
             }
 
             if (messages.isEmpty()) {
@@ -92,11 +96,53 @@ class ConversationContextServiceImpl(
             // Step 5: Build context transcript
             val context = buildContextTranscript(messages)
 
-            logger.info("Built conversation context for $contactEmail: ${context.length} chars")
-            context
+            // Step 6: Detect language from contact's recent messages (last 3-4 to get dominant language)
+            val language = detectConversationLanguage(messages)
+
+            logger.info("Built conversation context for $contactEmail: ${context.length} chars, detected language: $language")
+            Pair(context, language)
         } catch (e: Exception) {
             logger.error("Failed to fetch conversation context for $contactEmail: ${e.message}", e)
             null  // Return null to trigger fallback to profileSummary
+        }
+    }
+
+    /**
+     * Detect language from contact's messages (last 3-4 messages to handle occasional English messages)
+     * This ensures we detect the primary language of contact, not just a single message
+     */
+    private fun detectConversationLanguage(messages: List<Map<String, String>>): String? {
+        return try {
+            // Get last 3-4 messages from contact (to get dominant language)
+            val contactMessages = messages.filter { it["role"] == "CONTACT" }
+                .takeLast(3)  // Last 3 messages from contact
+
+            if (contactMessages.isEmpty()) {
+                logger.debug("No contact messages available for language detection")
+                return null
+            }
+
+            // Combine recent contact messages for better language detection
+            val combinedContactText = contactMessages
+                .mapNotNull { it["body"] }
+                .filter { it.isNotBlank() }
+                .joinToString("\n\n")
+
+            if (combinedContactText.isBlank()) {
+                logger.debug("No contact message text available for language detection")
+                return null
+            }
+
+            // Detect language from combined contact messages
+            val language = languageDetectionService.detectLanguage(combinedContactText)
+
+            if (language != null) {
+                logger.debug("Detected contact's language: $language from ${contactMessages.size} recent messages")
+            }
+            language
+        } catch (e: Exception) {
+            logger.warn("Failed to detect contact's language: ${e.message}")
+            null
         }
     }
 
@@ -145,10 +191,12 @@ class ConversationContextServiceImpl(
     /**
      * Fetch message body and metadata for context building
      * Returns message object with role, date, subject, body
+     * Role is determined by comparing 'From' header with contactEmail
      */
     private fun fetchMessageForContext(
         accessToken: String,
-        messageId: String
+        messageId: String,
+        contactEmail: String
     ): Map<String, String>? {
         return try {
             val message = gmailApiClient.getMessage(accessToken, messageId)
@@ -162,10 +210,12 @@ class ConversationContextServiceImpl(
             val date = headerMap["Date"] ?: ""
             val subject = headerMap["Subject"] ?: ""
 
-            // Determine role (USER/CONTACT/OTHER)
-            val role = when {
-                from.contains("@", ignoreCase = true) -> "CONTACT"
-                else -> "USER"  // Simplified: assume if not contact, then user
+            // Determine role by checking if message is from contact
+            // Handle both formats: "Name <email@domain>" and "email@domain"
+            val role = if (extractEmailFromHeader(from).equals(contactEmail, ignoreCase = true)) {
+                "CONTACT"
+            } else {
+                "USER"
             }
 
             // Extract body (text/plain or text/html)
@@ -296,6 +346,33 @@ class ConversationContextServiceImpl(
             dateString.take(10)  // Fallback to first 10 chars
         }
     }
-}
 
+    /**
+     * Extract email from Gmail "From" header
+     * Handles both formats:
+     * - "John Doe <john@example.com>" → "john@example.com"
+     * - "john@example.com" → "john@example.com"
+     */
+    private fun extractEmailFromHeader(fromHeader: String): String {
+        return try {
+            // Try angle bracket format first: <email@domain>
+            val angleMatch = Regex("""<([^>]+)>""").find(fromHeader)
+            if (angleMatch != null) {
+                return angleMatch.groupValues[1].trim()
+            }
+
+            // Fallback: extract email using regex
+            val emailMatch = Regex("""([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})""").find(fromHeader)
+            if (emailMatch != null) {
+                return emailMatch.groupValues[0].trim()
+            }
+
+            // If no email found, return the whole header
+            fromHeader.trim()
+        } catch (e: Exception) {
+            logger.warn("Failed to extract email from header: $fromHeader")
+            fromHeader.trim()
+        }
+    }
+}
 

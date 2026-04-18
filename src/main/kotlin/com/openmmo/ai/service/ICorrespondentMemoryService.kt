@@ -52,5 +52,18 @@ interface ICorrespondentMemoryService {
      * Delete all memories for user
      */
     fun forgetAll(userId: String)
+
+    /**
+     * Ensure memory is up-to-date (lazy build strategy)
+     * - Checks if there are new threads since last update
+     * - If thread changed: collects recent threads, extracts content, calls AI to compress memory
+     * - Updates preferredLanguage and languageConfidence
+     * - Returns updated memory (or unchanged if no new activity)
+     *
+     * @param userId User ID
+     * @param correspondentEmail Correspondent email (will be normalized)
+     * @return Updated or unchanged CorrespondentMemory
+     */
+    fun ensureMemoryUpToDate(userId: String, correspondentEmail: String): CorrespondentMemory
 }
 

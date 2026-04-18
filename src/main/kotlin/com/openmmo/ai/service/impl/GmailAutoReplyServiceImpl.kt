@@ -180,15 +180,45 @@ class GmailAutoReplyServiceImpl(
                         if (shouldSkipEmail(emailFrom, finalSubject, emailContent, headers, userId)) {
                             logger.info("Skipping email $messageId for user $userId due to skip rules")
                         } else {
-                            // ✅ NEW: Get conversation context from Gmail thread (similar to reminder system)
-                            // Step 1: Try to get context from Gmail thread directly
-                            val gmailThreadContext = conversationContextService.getContextForReminder(userId, emailFrom)
+                            // ✅ Step 0: Lazy-build memory (similar to reminder system)
+                            logger.debug("Lazy-building memory for $emailFrom before auto-reply...")
+                            try {
+                                correspondentMemoryService.ensureMemoryUpToDate(userId, emailFrom)
+                            } catch (e: Exception) {
+                                logger.warn("Failed to ensure memory up-to-date: ${e.message}, continuing with existing memory")
+                            }
 
-                            // Step 2: Fallback to correspondent memory if Gmail context not available
-                            val conversationContext = gmailThreadContext ?: run {
-                                logger.debug("Gmail thread context unavailable, trying correspondent memory fallback")
-                                val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
-                                correspondentMemoryService.buildMemoryContextText(memory)
+                            // ✅ Step 1: Try to get context from Gmail thread directly
+                            val gmailThreadContextPair = conversationContextService.getContextForReminder(userId, emailFrom)
+                            val gmailThreadContext = gmailThreadContextPair?.first  // Extract context string from pair
+                            val detectedLanguage = gmailThreadContextPair?.second  // Extract language from pair
+
+                            // Step 2: Get correspondent memory (for richer context)
+                            val memory = correspondentMemoryService.getOrCreate(userId, emailFrom)
+                            val correspondentMemoryContext = correspondentMemoryService.buildMemoryContextText(memory)
+
+                            // Step 3: Combine contexts (Gmail thread + correspondent memory)
+                            val conversationContext = when {
+                                // Case 1: Both Gmail context AND memory available → COMBINE them
+                                gmailThreadContext != null && correspondentMemoryContext.isNotEmpty() -> {
+                                    logger.debug("Combining Gmail thread context with correspondent memory for richer context")
+                                    "$gmailThreadContext\n\n[Historical Context]\n$correspondentMemoryContext"
+                                }
+                                // Case 2: Only Gmail context available
+                                gmailThreadContext != null -> {
+                                    logger.debug("Using Gmail thread context")
+                                    gmailThreadContext
+                                }
+                                // Case 3: Only memory available
+                                correspondentMemoryContext.isNotEmpty() -> {
+                                    logger.debug("Using correspondent memory context")
+                                    correspondentMemoryContext
+                                }
+                                // Case 4: Neither available → fallback to empty
+                                else -> {
+                                    logger.warn("No context available for $emailFrom (neither Gmail thread nor memory)")
+                                    ""
+                                }
                             }
 
                             // Get user's selected AI provider and custom prompt
@@ -305,8 +335,8 @@ class GmailAutoReplyServiceImpl(
             logger.debug("Extracting headers from Gmail API for message: $messageId")
             val headers = gmailApiService.getMessageHeaders(userId, messageId)
 
-            val emailFrom = headers["From"] ?: ""
-            val emailSubject = headers["Subject"] ?: ""
+            val emailFrom = (headers["From"] as? String) ?: ""
+            val emailSubject = (headers["Subject"] as? String) ?: ""
 
             logger.debug("Gmail API headers - From: $emailFrom, Subject: $emailSubject")
 

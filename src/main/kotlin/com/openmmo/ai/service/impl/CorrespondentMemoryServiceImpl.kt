@@ -2,17 +2,23 @@ package com.openmmo.ai.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.openmmo.ai.client.GmailApiClient
 import com.openmmo.ai.entity.CorrespondentMemory
+import com.openmmo.ai.entity.GmailConnection
 import com.openmmo.ai.entity.MemoryFact
 import com.openmmo.ai.entity.MemoryUpdateResponse
 import com.openmmo.ai.entity.StylePrefs
 import com.openmmo.ai.repository.CorrespondentMemoryRepository
+import com.openmmo.ai.repository.GmailBotConfigRepository
+import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.service.ICorrespondentMemoryService
 import com.openmmo.ai.service.IGeminiAiService
+import com.openmmo.ai.service.IGmailApiService
 import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import java.util.Base64
 
 /**
  * Correspondent Memory Service Implementation
@@ -22,6 +28,10 @@ import java.time.LocalDateTime
 @Service
 class CorrespondentMemoryServiceImpl(
     private val memoryRepository: CorrespondentMemoryRepository,
+    private val gmailConnectionRepository: GmailConnectionRepository,
+    private val gmailBotConfigRepository: GmailBotConfigRepository,
+    private val gmailApiClient: GmailApiClient,
+    private val gmailApiService: IGmailApiService,
     @Qualifier("groqAiServiceImpl")
     private val groqAiService: IGeminiAiService,
     @Qualifier("geminiAiServiceImpl")
@@ -167,6 +177,115 @@ class CorrespondentMemoryServiceImpl(
         val memories = memoryRepository.findByUserId(userId)
         memoryRepository.deleteAll(memories)
         logger.info("Deleted all memories for user=$userId (${memories.size} records)")
+    }
+
+    /**
+     * Ensure memory is up-to-date (lazy build strategy)
+     *
+     * Behavior:
+     * 1. Normalize email, load or create empty memory
+     * 2. Query Gmail for latest thread with contact (90 days)
+     * 3. Check if thread changed (cache hit detection)
+     * 4. If thread changed: collect 5 threads, call AI for compression
+     * 5. Update preferredLanguage and languageConfidence
+     * 6. Return updated memory
+     */
+    private fun decryptAccessToken(connection: GmailConnection): String {
+        return try {
+            // Use GmailApiServiceImpl's public method if available
+            if (gmailApiService is GmailApiServiceImpl) {
+                gmailApiService.getAccessTokenPublic(connection)
+            } else {
+                // Fallback: If token starts with "Bearer ", assume it's already decrypted
+                ""  // This shouldn't happen in normal operation
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to get access token: ${e.message}")
+            ""
+        }
+    }
+
+    override fun ensureMemoryUpToDate(userId: String, correspondentEmail: String): CorrespondentMemory {
+        try {
+            val normalizedEmail = correspondentEmail.trim().lowercase()
+            logger.debug("Ensuring memory up-to-date for user=$userId, correspondent=$normalizedEmail")
+
+            // Step 1: Load or create empty memory
+            var memory = getOrCreate(userId, normalizedEmail)
+
+            // Step 2: Get Gmail connection
+            val connection = gmailConnectionRepository.findByUserId(userId)
+            if (connection == null) {
+                logger.warn("Gmail not connected for user=$userId, returning existing memory")
+                return memory
+            }
+
+            val accessToken = decryptAccessToken(connection)
+
+            // Step 3: Find latest thread ID for this contact
+            val latestThreadId = findLatestThreadId(accessToken, normalizedEmail)
+            if (latestThreadId == null) {
+                logger.debug("No threads found for $normalizedEmail in last 90 days, memory unchanged")
+                return memory
+            }
+
+            // Step 4: Check for cache hit (no new threads)
+            if (latestThreadId == memory.lastThreadId) {
+                logger.debug("Cache hit: latestThreadId=$latestThreadId matches lastThreadId, updating lastSeenAt only")
+                memory = memory.copy(
+                    lastSeenAt = LocalDateTime.now(),
+                    updatedAt = LocalDateTime.now()
+                )
+                return memoryRepository.save(memory)
+            }
+
+            // Step 5: Thread changed - collect recent threads and compress
+            logger.info("Thread changed: old=${memory.lastThreadId}, new=$latestThreadId, compressing memory...")
+
+            val threadExcerpts = collectThreadExcerpts(accessToken, normalizedEmail)
+            if (threadExcerpts.isEmpty()) {
+                logger.debug("No thread content to compress, updating lastThreadId only")
+                memory = memory.copy(
+                    lastThreadId = latestThreadId,
+                    lastSeenAt = LocalDateTime.now(),
+                    updatedAt = LocalDateTime.now()
+                )
+                return memoryRepository.save(memory)
+            }
+
+            // Step 6: Call AI to compress and detect language
+            val botConfig = gmailBotConfigRepository.findByUserId(userId)
+            val aiProvider = botConfig?.aiProvider?.lowercase() ?: "gemini"
+
+            val (detectedLanguage, confidence, updateResponse) = compressMemoryWithAi(
+                correspondentEmail = normalizedEmail,
+                threadExcerpts = threadExcerpts,
+                currentMemory = memory,
+                aiProvider = aiProvider
+            )
+
+            // Step 7: Merge AI response into memory
+            memory = mergeMemoryUpdate(memory, updateResponse, "", latestThreadId)
+
+            // Step 8: Update with language detection and thread info
+            memory = memory.copy(
+                preferredLanguage = detectedLanguage,
+                languageConfidence = confidence,
+                lastThreadId = latestThreadId,
+                lastSeenAt = LocalDateTime.now(),
+                updatedAt = LocalDateTime.now(),
+                version = memory.version + 1
+            )
+
+            val saved = memoryRepository.save(memory)
+            logger.info("Memory updated: language=$detectedLanguage (confidence=$confidence), threadId=$latestThreadId")
+            return saved
+
+        } catch (e: Exception) {
+            logger.error("Error ensuring memory up-to-date for user=$userId, correspondent=$correspondentEmail: ${e.message}", e)
+            // Don't crash - return existing memory or create new empty one
+            return getOrCreate(userId, correspondentEmail)
+        }
     }
 
     // ==================== Private helpers ====================
@@ -369,5 +488,221 @@ Return ONLY valid JSON, no other text.
             }
         }
     }
+
+    // ==================== Private helpers for ensureMemoryUpToDate ====================
+
+    private fun findLatestThreadId(accessToken: String, contactEmail: String): String? {
+        return try {
+            val query = "(from:$contactEmail OR to:$contactEmail) newer_than:90d"
+            @Suppress("UNCHECKED_CAST")
+            val response = gmailApiClient.listMessages(accessToken, query, maxResults = 1)
+            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+            messages.firstOrNull()?.get("threadId").also {
+                logger.debug("Latest threadId for $contactEmail: $it")
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to find latest thread for $contactEmail: ${e.message}")
+            null
+        }
+    }
+
+    private fun collectThreadExcerpts(accessToken: String, contactEmail: String): String {
+        return try {
+            val query = "(from:$contactEmail OR to:$contactEmail) newer_than:90d"
+
+            @Suppress("UNCHECKED_CAST")
+            val response = gmailApiClient.listMessages(accessToken, query, maxResults = 15)
+            val messages = response["messages"] as? List<Map<String, String>> ?: emptyList()
+
+            // Get unique thread IDs
+            val threadIds = messages.mapNotNull { it["threadId"] }.distinct().take(5)
+            logger.debug("Collecting excerpts from ${threadIds.size} threads")
+
+            val excerpts = mutableListOf<String>()
+            var totalChars = 0
+            val MAX_TOTAL_CHARS = 20000
+
+            for (threadId in threadIds) {
+                if (totalChars >= MAX_TOTAL_CHARS) break
+
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    val threadData = gmailApiClient.getThread(accessToken, threadId)
+                    val threadMessages = threadData["messages"] as? List<Map<String, Any>> ?: emptyList()
+
+                    // Take last 2 messages from thread
+                    threadMessages.takeLast(2).forEach { msg ->
+                        val payload = msg["payload"] as? Map<String, Any>
+                        val headers = payload?.get("headers") as? List<Map<String, String>> ?: emptyList()
+
+                        val subject = headers.find { it["name"] == "Subject" }?.get("value") ?: "No Subject"
+                        val date = headers.find { it["name"] == "Date" }?.get("value") ?: ""
+                        val from = headers.find { it["name"] == "From" }?.get("value") ?: ""
+
+                        val body = extractMessageBody(msg)
+                        val truncatedBody = body.take(1200)
+
+                        val excerpt = "[$date] From: $from\nSubject: $subject\n$truncatedBody\n---"
+                        excerpts.add(excerpt)
+                        totalChars += excerpt.length
+                    }
+                } catch (e: Exception) {
+                    logger.warn("Failed to collect excerpt from thread $threadId: ${e.message}")
+                }
+            }
+
+            excerpts.joinToString("\n\n").take(MAX_TOTAL_CHARS).also {
+                logger.debug("Collected ${it.length} chars from ${excerpts.size} message excerpts")
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to collect thread excerpts: ${e.message}")
+            ""
+        }
+    }
+
+    private fun extractMessageBody(message: Map<String, Any>): String {
+        return try {
+            val payload = message["payload"] as? Map<String, Any> ?: return ""
+
+            // Try to get plain text body first
+            val parts = payload["parts"] as? List<Map<String, Any>>
+            if (!parts.isNullOrEmpty()) {
+                for (part in parts) {
+                    val mimeType = part["mimeType"] as? String ?: ""
+                    if (mimeType == "text/plain") {
+                        val body = part["body"] as? Map<String, String>
+                        val data = body?.get("data")
+                        if (!data.isNullOrBlank()) {
+                            return String(Base64.getDecoder().decode(data)).take(1200)
+                        }
+                    }
+                }
+            }
+
+            // Fallback to main body
+            val body = payload["body"] as? Map<String, String> ?: return ""
+            val data = body["data"]
+            if (!data.isNullOrBlank()) {
+                String(Base64.getDecoder().decode(data)).take(1200)
+            } else {
+                ""
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to extract message body: ${e.message}")
+            ""
+        }
+    }
+
+    private fun compressMemoryWithAi(
+        correspondentEmail: String,
+        threadExcerpts: String,
+        currentMemory: CorrespondentMemory,
+        aiProvider: String
+    ): Triple<String?, Double?, MemoryUpdateResponse> {
+        return try {
+            val factsStr = if (currentMemory.facts.isNotEmpty()) {
+                currentMemory.facts.joinToString("\n") { "${it.key}: ${it.value}" }
+            } else {
+                "None yet"
+            }
+
+            val prompt = """
+You are an email memory compressor. Extract profile, facts, language, and style from email threads.
+
+INSTRUCTIONS:
+- Detect contact's preferred language (vi, en, etc.) from thread content
+- Extract key personal/business facts (name, role, company, interests, etc.)
+- Identify communication style (formal, casual, friendly, technical)
+- Return valid JSON matching schema
+- Do NOT capture sensitive data
+- Keep summary under 500 chars
+
+EMAIL THREADS FROM CONTACT '$correspondentEmail':
+$threadExcerpts
+
+CURRENT MEMORY:
+Summary: ${currentMemory.profileSummary.ifEmpty { "Not set" }}
+Facts: $factsStr
+
+Extract and return JSON:
+{
+  "summary_patch": "Brief profile update or key info (plain text)",
+  "facts_add": [
+    {
+      "key": "fact_key",
+      "value": "fact value",
+      "confidence": 0.8
+    }
+  ],
+  "facts_remove_keys": [],
+  "style_prefs": {
+    "language": "vi or en or other code",
+    "tone": "formal or casual or friendly or null",
+    "formattingNotes": "any style notes or null"
+  },
+  "sensitive": false,
+  "language_confidence": 0.9
 }
 
+Return ONLY valid JSON, no other text.
+            """.trimIndent()
+
+            logger.debug("Calling $aiProvider for memory compression...")
+            val responseText = try {
+                val aiService = getAiServiceForProvider(aiProvider)
+                aiService.generateText(prompt)
+            } catch (e: Exception) {
+                logger.warn("Failed to call $aiProvider: ${e.message}, trying fallback...")
+                val fallbackService = if (aiProvider == "gemini") groqAiService else geminiAiService
+                fallbackService.generateText(prompt)
+            }
+
+            val cleanedResponse = responseText
+                .trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+            logger.debug("Parsing AI response (${cleanedResponse.length} chars)")
+
+            @Suppress("UNCHECKED_CAST")
+            val parsed = objectMapper.readValue(cleanedResponse, Map::class.java) as Map<String, Any>
+
+            val stylePrefsMap = (parsed["style_prefs"] as? Map<String, Any>) ?: mapOf()
+            val detectedLanguage = (stylePrefsMap["language"] ?: parsed["language_code"]) as? String
+            val confidence = (parsed["language_confidence"] as? Number)?.toDouble() ?: 0.8
+
+            // Convert parsed map to MemoryUpdateResponse
+            @Suppress("UNCHECKED_CAST")
+            val stylePrefs = parsed["style_prefs"] as? Map<String, String> ?: mapOf()
+            @Suppress("UNCHECKED_CAST")
+            val factsAdd = (parsed["facts_add"] as? List<Map<String, Any>> ?: emptyList()).map { factMap ->
+                MemoryFact(
+                    key = (factMap["key"] as? String)?.lowercase()?.replace(" ", "_") ?: "unknown",
+                    value = factMap["value"] as? String ?: "",
+                    confidence = (factMap["confidence"] as? Number)?.toDouble() ?: 0.6
+                )
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            val updateResponse = MemoryUpdateResponse(
+                summary_patch = parsed["summary_patch"] as? String ?: "",
+                facts_add = factsAdd,
+                facts_remove_keys = (parsed["facts_remove_keys"] as? List<String>) ?: emptyList(),
+                style_prefs = StylePrefs(
+                    language = stylePrefs["language"],
+                    tone = stylePrefs["tone"],
+                    formattingNotes = stylePrefs["formattingNotes"]
+                ),
+                sensitive = (parsed["sensitive"] as? Boolean) ?: false
+            )
+
+            logger.debug("Memory compression result: language=$detectedLanguage, confidence=$confidence")
+            Triple(detectedLanguage, confidence, updateResponse)
+        } catch (e: Exception) {
+            logger.warn("Failed to compress memory: ${e.message}, returning empty update")
+            Triple(null, null, MemoryUpdateResponse())
+        }
+    }
+}

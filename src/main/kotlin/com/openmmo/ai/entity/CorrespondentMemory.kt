@@ -21,6 +21,8 @@ data class CorrespondentMemory(
     val profileSummary: String = "",
     val facts: List<MemoryFact> = emptyList(),
     val stylePrefs: StylePrefs = StylePrefs(),
+    val preferredLanguage: String? = null,  // "vi", "en", etc. (detected from contact messages)
+    val languageConfidence: Double? = null,  // 0.0 - 1.0
     val lastSeenAt: LocalDateTime? = null,
     val lastThreadId: String? = null,
     val version: Int = 1,
@@ -37,7 +39,7 @@ data class MemoryFact(
 )
 
 data class StylePrefs(
-    val language: String? = null,  // "vi", "en"
+    val language: String? = null,  // "vi", "en" (deprecated: use preferredLanguage)
     val tone: String? = null,      // "friendly", "formal", "professional"
     val formattingNotes: String? = null
 )

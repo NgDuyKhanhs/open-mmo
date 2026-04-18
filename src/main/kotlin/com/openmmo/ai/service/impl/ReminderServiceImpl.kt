@@ -3,15 +3,13 @@ package com.openmmo.ai.service.impl
 import com.openmmo.ai.dto.ReminderConfigDto
 import com.openmmo.ai.dto.ReminderResponse
 import com.openmmo.ai.dto.toResponse
-import com.openmmo.ai.entity.ReminderConfig
-import com.openmmo.ai.repository.GmailConnectionRepository
 import com.openmmo.ai.repository.ReminderConfigRepository
 import com.openmmo.ai.repository.CorrespondentMemoryRepository
 import com.openmmo.ai.repository.GmailBotConfigRepository
 import com.openmmo.ai.service.IReminderService
 import com.openmmo.ai.service.IAIReminderService
-import com.openmmo.ai.service.IGmailApiService
 import com.openmmo.ai.service.IConversationContextService
+import com.openmmo.ai.service.ICorrespondentMemoryService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -19,11 +17,11 @@ import java.time.LocalDateTime
 @Service
 class ReminderServiceImpl(
     private val reminderRepository: ReminderConfigRepository,
-    private val gmailApiService: IGmailApiService,
     private val correspondentMemoryRepository: CorrespondentMemoryRepository,
     private val gmailBotConfigRepository: GmailBotConfigRepository,
     private val aiReminderService: IAIReminderService,
-    private val conversationContextService: IConversationContextService
+    private val conversationContextService: IConversationContextService,
+    private val correspondentMemoryService: ICorrespondentMemoryService
 ) : IReminderService {
 
     companion object {
@@ -115,38 +113,74 @@ class ReminderServiceImpl(
     /**
      * Build reminder message with conversation context
      *
-     * Preference order:
-     * 1. Try to get recent conversation context from Gmail (IConversationContextService)
-     * 2. Fallback to profileSummary from CorrespondentMemory DB
-     * 3. If both fail, pass null/empty to AI service (it will handle gracefully)
+     * Lazy build strategy (Phần 3):
+     * 1. Call ensureMemoryUpToDate() to lazy-load contact memory (checks for new threads)
+     *    - If no new threads since last update: cache hit, very cheap (no AI call)
+     *    - If new threads: collect 5 threads, call AI for compression
+     * 2. Get conversation context (Gmail or DB fallback)
+     * 3. Use memory.preferredLanguage for language-aware reminder generation
+     * 4. Generate reminder message
+     *
+     * This ensures memory is always fresh when reminder sends without extra calls during CRUD.
      */
     fun buildReminderMessage(
         userId: String,
         contactEmail: String
     ): String {
+        // Step 0: Lazy-build memory (new approach - Phần 3)
+        logger.debug("Lazy-building memory for $contactEmail during reminder generation...")
+        try {
+            correspondentMemoryService.ensureMemoryUpToDate(userId, contactEmail)
+        } catch (e: Exception) {
+            logger.warn("Failed to ensure memory up-to-date: ${e.message}, continuing with existing memory")
+        }
+
         // Step 1: Try to get conversation context from Gmail (cached 15 min)
-        val gmailContext = conversationContextService.getContextForReminder(userId, contactEmail)
+        val contextResult = conversationContextService.getContextForReminder(userId, contactEmail)
+        val gmailContext = contextResult?.first
+        val detectedLanguage = contextResult?.second
 
-        // Step 2: Fallback to profileSummary from DB if Gmail context not available
-        val context = gmailContext ?: getCorrespondentProfileSummary(userId, contactEmail)
+        // Step 2: Get correspondent memory (for context when thread is empty or to combine with Gmail)
+        val memory = correspondentMemoryService.getOrCreate(userId, contactEmail)
+        val correspondentMemoryContext = correspondentMemoryService.buildMemoryContextText(memory)
 
-        // Step 3: Get user's selected AI provider
+        // Step 3: Combine contexts (Gmail thread + correspondent memory)
+        val context = when {
+            // Case 1: Both Gmail context AND memory available → COMBINE them
+            gmailContext != null && correspondentMemoryContext.isNotEmpty() -> {
+                logger.debug("Combining Gmail thread context with correspondent memory for richer context")
+                "$gmailContext\n\n[Historical Context]\n$correspondentMemoryContext"
+            }
+            // Case 2: Only Gmail context available
+            gmailContext != null -> {
+                logger.debug("Using Gmail thread context")
+                gmailContext
+            }
+            // Case 3: Only memory available
+            correspondentMemoryContext.isNotEmpty() -> {
+                logger.debug("Using correspondent memory context")
+                correspondentMemoryContext
+            }
+            // Case 4: Neither available → fallback to empty
+            else -> {
+                logger.warn("No context available for $contactEmail (neither Gmail thread nor memory)")
+                ""
+            }
+        }
+
+        // Step 4: Get user's selected AI provider
         val aiProvider = getBotConfigAiProvider(userId)
 
-        // Step 4: Call AI service once with context (either Gmail or DB summary or null)
-        logger.debug("Building reminder message for $contactEmail with context source: ${if (gmailContext != null) "Gmail" else "DB/fallback"}")
-        return aiReminderService.generateReminderMessage(contactEmail, context, aiProvider)
+        // Step 5: Call AI service with combined context and detected language
+        logger.debug("Building reminder message for $contactEmail with context source: ${when {
+            gmailContext != null && correspondentMemoryContext.isNotEmpty() -> "Combined (Gmail + DB)"
+            gmailContext != null -> "Gmail"
+            correspondentMemoryContext.isNotEmpty() -> "DB Memory"
+            else -> "None"
+        }}, language: $detectedLanguage")
+        return aiReminderService.generateReminderMessage(contactEmail, context, aiProvider, detectedLanguage)
     }
 
-    private fun getCorrespondentProfileSummary(userId: String, contactEmail: String): String {
-        return try {
-            val correspondent = correspondentMemoryRepository.findByUserIdAndCorrespondentEmail(userId, contactEmail)
-            correspondent?.profileSummary?.takeIf { it.isNotBlank() } ?: ""
-        } catch (e: Exception) {
-            logger.warn("Failed to get profile summary for $contactEmail: ${e.message}")
-            ""
-        }
-    }
 
     private fun getBotConfigAiProvider(userId: String): String {
         return try {

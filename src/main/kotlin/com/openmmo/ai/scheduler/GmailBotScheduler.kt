@@ -102,7 +102,7 @@ class GmailBotScheduler(
         val jobId = java.util.UUID.randomUUID().toString().substring(0, 8)
 
         try {
-            logger.info("🚀 [Job-$jobId] Starting async auto-reply processing...")
+            logger.info("[Job-$jobId] Starting async auto-reply processing...")
 
             val result = autoReplyService.autoReplyEmails()
 

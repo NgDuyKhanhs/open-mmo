@@ -24,7 +24,7 @@ class GeminiApiClient(
     companion object {
         private val logger = LoggerFactory.getLogger(GeminiApiClient::class.java)
         private const val GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-        private const val MODEL = "gemini-3-flash-preview"
+        private const val MODEL = "gemini-2.5-flash"
     }
 
     private val objectMapper = ObjectMapper()

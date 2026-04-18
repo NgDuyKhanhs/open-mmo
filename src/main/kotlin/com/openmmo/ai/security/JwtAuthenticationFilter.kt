@@ -34,9 +34,9 @@ class JwtAuthenticationFilter(
         try {
             val token = getJwtFromRequest(request)
 
-            logger.debug("🔍 JWT Filter - Checking token for: ${request.requestURI}")
+            logger.debug("JWT Filter - Checking token for: ${request.requestURI}")
             if (token != null) {
-                logger.debug("🔑 Token found, length: ${token.length}, start: ${token.substring(0, 20)}...")
+                logger.debug("Token found, length: ${token.length}, start: ${token.substring(0, 20)}...")
                 logger.debug("Validating token...")
 
                 if (jwtTokenProvider.validateToken(token)) {
@@ -45,7 +45,7 @@ class JwtAuthenticationFilter(
                     val email = jwtTokenProvider.getEmailFromToken(token)
                     val roles = jwtTokenProvider.getRolesFromToken(token)
 
-                    logger.debug("📋 Token claims - userId: $userId, email: $email, roles: $roles")
+                    logger.debug("Token claims - userId: $userId, email: $email, roles: $roles")
 
                     if (userId != null) {
                         // Convert roles to GrantedAuthority

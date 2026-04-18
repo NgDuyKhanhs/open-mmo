@@ -12,12 +12,14 @@ interface IAIReminderService {
      * @param conversationContext Recent conversation context from Gmail (preferred) or profile summary from DB (fallback)
      *                           Can be null/empty if no context available
      * @param aiProvider The AI provider to use: "gemini" (default) or "groq"
+     * @param language The detected language code (e.g., "en", "vi", "ja") for reminder language. If null, defaults to English
      * @return Generated personalized reminder message (email body only, no greeting/signature)
      */
     fun generateReminderMessage(
         contactEmail: String,
         conversationContext: String?,
-        aiProvider: String = "gemini"
+        aiProvider: String = "gemini",
+        language: String? = null
     ): String
 }
 

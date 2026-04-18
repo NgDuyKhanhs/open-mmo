@@ -1,72 +1,111 @@
 package com.openmmo.ai.service.impl
 
 import com.openmmo.ai.service.ILanguageDetectionService
-import com.pemistahl.lingua.api.Language
-import com.pemistahl.lingua.api.LanguageDetector
+import com.github.pemistahl.lingua.api.Language
+import com.github.pemistahl.lingua.api.LanguageDetectorBuilder
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 /**
  * Language Detection Service Implementation
- *
- * Uses Lingua library to detect language from email text
- * Supports 75 languages with high accuracy
+ * Uses the Lingua library for highly accurate language detection
+ * Supports 75+ languages
  */
 @Service
 class LanguageDetectionServiceImpl : ILanguageDetectionService {
 
     companion object {
         private val logger = LoggerFactory.getLogger(LanguageDetectionServiceImpl::class.java)
-        private val detector: LanguageDetector = LanguageDetector.builder()
-            .withLanguages(Language.values().toList())
-            .withPreloadedLanguageModels()
+
+        // Initialize Lingua detector once (thread-safe, reusable)
+        private val detector = LanguageDetectorBuilder.fromAllLanguages()
             .build()
     }
 
-    /**
-     * Detect language from 2 main emails
-     * Combines both emails for better accuracy
-     */
     override fun detectLanguageFromEmails(email1: String, email2: String): String? {
         return try {
-            // Combine both emails with a separator
             val combinedText = "$email1 $email2"
-
-            // Need minimum text for accurate detection
-            if (combinedText.length < 30) {
-                logger.debug("Combined email text too short for language detection (${combinedText.length} chars)")
-                return null
+            if (combinedText.isBlank()) {
+                logger.debug("Combined email text is blank, defaulting to English")
+                return "en"
             }
 
-            val language = detector.detectLanguageOf(combinedText)
-            val languageCode = language.isoCode639_1.toString()
-
-            logger.debug("Detected language from 2 emails: $languageCode (${language.name})")
-            languageCode
+            val detected = detectLanguageInternal(combinedText)
+            logger.debug("Detected language from 2 emails: $detected (combined length: ${combinedText.length} chars)")
+            detected
         } catch (e: Exception) {
             logger.warn("Failed to detect language from emails: ${e.message}")
-            null
+            "en"  // Fallback to English on error
+        }
+    }
+
+    override fun detectLanguage(text: String): String? {
+        return try {
+            if (text.isBlank()) {
+                logger.debug("Text is blank, defaulting to English")
+                return "en"
+            }
+
+            val detected = detectLanguageInternal(text)
+            logger.debug("Detected language: $detected (text length: ${text.length} chars)")
+            detected
+        } catch (e: Exception) {
+            logger.warn("Failed to detect language: ${e.message}")
+            "en"  // Fallback to English on error
         }
     }
 
     /**
-     * Detect language from a single text
+     * Internal language detection using Lingua library
+     * Returns ISO 639-1 language code
      */
-    override fun detectLanguage(text: String): String? {
+    private fun detectLanguageInternal(text: String): String {
+        if (text.isBlank()) return "en"
+
         return try {
-            if (text.length < 30) {
-                logger.debug("Text too short for language detection (${text.length} chars)")
-                return null
-            }
-
+            // Lingua detects language and returns Language enum
             val language = detector.detectLanguageOf(text)
-            val languageCode = language.isoCode639_1.toString()
 
-            logger.debug("Detected language: $languageCode (${language.name})")
-            languageCode
+            // Convert Language enum to language code (e.g., VIETNAMESE -> "vi")
+            languageToCode(language)
         } catch (e: Exception) {
-            logger.warn("Failed to detect language: ${e.message}")
-            null
+            logger.warn("Failed to detect language using Lingua: ${e.message}, defaulting to English")
+            "en"
+        }
+    }
+
+    /**
+     * Convert Lingua Language enum to ISO 639-1 language code
+     */
+    private fun languageToCode(language: Language): String {
+        return when (language) {
+            Language.VIETNAMESE -> "vi"
+            Language.ENGLISH -> "en"
+            Language.CHINESE -> "zh"
+            Language.JAPANESE -> "ja"
+            Language.KOREAN -> "ko"
+            Language.THAI -> "th"
+            Language.RUSSIAN -> "ru"
+            Language.FRENCH -> "fr"
+            Language.GERMAN -> "de"
+            Language.SPANISH -> "es"
+            Language.PORTUGUESE -> "pt"
+            Language.HINDI -> "hi"
+            Language.INDONESIAN -> "id"
+            Language.TAGALOG -> "tl"
+            Language.ARABIC -> "ar"
+            Language.TURKISH -> "tr"
+            Language.POLISH -> "pl"
+            Language.ITALIAN -> "it"
+            Language.DUTCH -> "nl"
+            Language.FINNISH -> "fi"
+            Language.SWEDISH -> "sv"
+            Language.DANISH -> "da"
+            else -> {
+                // For other languages, use the language's ISO 639-1 code
+                logger.warn("Language code mapping not defined for: $language, defaulting to en")
+                "en"
+            }
         }
     }
 }

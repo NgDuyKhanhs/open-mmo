@@ -45,7 +45,10 @@ dependencies {
 
 	// Ed25519 cryptography
 	implementation("org.bouncycastle:bcprov-jdk18on:1.78")
-	
+
+	// Language Detection Library
+	implementation("com.github.pemistahl:lingua:1.2.2")
+
 	testImplementation("org.springframework.boot:spring-boot-starter-test:3.3.4")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-mongodb:3.3.4")
 	testImplementation("org.springframework.security:spring-security-test:6.3.1")

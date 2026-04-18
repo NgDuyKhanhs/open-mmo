@@ -42,7 +42,7 @@ class ReminderScheduler(
     /**
      * Process all enabled reminders every 5 minutes
      */
-    @Scheduled(fixedRate = 300000) // Every 5 minutes
+    @Scheduled(fixedRate = 60000) // Every 5 minutes
     fun processReminders() {
         try {
             logger.debug("Processing reminders...")
@@ -86,7 +86,7 @@ class ReminderScheduler(
 
         // 4. Send reminder email
         try {
-            logger.info("🚀 $contactId: Sending reminder #${reminder.sentCount + 1}/${reminder.maxReminders} (afterInactive=${reminder.afterInactive}min, repeatEvery=${reminder.repeatEvery}min)")
+            logger.info("$contactId: Sending reminder #${reminder.sentCount + 1}/${reminder.maxReminders} (afterInactive=${reminder.afterInactive}min, repeatEvery=${reminder.repeatEvery}min)")
             sendReminderEmail(reminder)
             updateReminderAfterSend(reminder)
         } catch (e: Exception) {
@@ -349,7 +349,7 @@ class ReminderScheduler(
         val startTime = System.currentTimeMillis()
 
         try {
-            logger.info("🚀 Starting ALL_CONTACTS reminder batch for userId: ${reminder.userId}")
+            logger.info("Starting ALL_CONTACTS reminder batch for userId: ${reminder.userId}")
 
             // ✅ OPTIMIZED: Query Gmail API to get all recent emails from real people
             val query = "in:inbox newer_than:30d " +

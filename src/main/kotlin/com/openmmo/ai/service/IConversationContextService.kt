@@ -11,9 +11,9 @@ interface IConversationContextService {
      *
      * @param userId User ID
      * @param contactEmail Contact email address
-     * @return Conversation context string (truncated), or null if no recent conversation found
+     * @return Pair of (conversation context string, detected language code) or null if no recent conversation found
      *         Falls back to empty string if fetch fails
      */
-    fun getContextForReminder(userId: String, contactEmail: String): String?
+    fun getContextForReminder(userId: String, contactEmail: String): Pair<String?, String?>?
 }
 
