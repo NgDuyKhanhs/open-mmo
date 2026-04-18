@@ -24,6 +24,9 @@ const emit = defineEmits<{
 const activeTab = ref<'mailbox' | 'config' | 'status' | 'reminders'>('mailbox')
 const navbarExpanded = ref(true)
 
+// Bot status local state
+const botToggleState = ref(false)
+
 // Composables
 const mailbox = useMailboxPagination()
 const config = useBotConfig()
@@ -57,7 +60,33 @@ onMounted(async () => {
   await provider.loadAiProvider()
   // Load reminder stats on mount
   await history.loadReminderHistoryStats()
+  // Sync bot toggle state
+  botToggleState.value = props.status.botEnabled
 })
+
+// Watch props.status.botEnabled and sync with local state
+watch(() => props.status.botEnabled, (newVal) => {
+  botToggleState.value = newVal
+})
+
+// Handle bot toggle with immediate UI feedback
+const handleBotToggle = async (event: Event) => {
+  const checkbox = event.target as HTMLInputElement
+  const isChecked = checkbox.checked
+
+  // Update state immediately for UI feedback
+  botToggleState.value = isChecked
+
+  // Call API to update backend
+  try {
+    await toggleBot()
+  } catch (err) {
+    // If API fails, revert the toggle
+    botToggleState.value = !isChecked
+    console.error('Failed to toggle bot:', err)
+    toast.error('Failed to toggle bot status')
+  }
+}
 
 // Switch to mailbox tab and load emails
 const switchToMailbox = async () => {
@@ -336,14 +365,14 @@ const saveConfigAndReload = async () => {
                     <div style="display: flex; align-items: center; gap: 12px;">
                       <label class="toggle-switch-large">
                         <input
+                          :checked="botToggleState"
                           type="checkbox"
-                          :checked="props.status.botEnabled"
-                          @change="toggleBot"
+                          @change="handleBotToggle"
                         />
                         <span class="toggle-slider-large"></span>
                       </label>
-                      <span :class="['status-badge-small', props.status.botEnabled ? 'active' : 'inactive']">
-                        {{ props.status.botEnabled ? '● Running' : '● Paused' }}
+                      <span :class="['status-badge-small', botToggleState ? 'active' : 'inactive']">
+                        {{ botToggleState ? '● Running' : '● Paused' }}
                       </span>
                     </div>
                   </div>
