@@ -203,22 +203,22 @@ provide('isLoadingStatus', isLoadingStatus)
             </div>
           </div>
 
-          <!-- Tab Content - RouterView will render the current tab view -->
-          <div class="tab-content">
-            <RouterView v-slot="{ Component, route }">
+           <!-- Tab Content - RouterView will render the current tab view -->
+           <div class="tab-content">
+             <RouterView v-slot="{ Component, route }">
 
-                <component
-                  :is="Component"
-                  :key="route.fullPath"
-                  :gmail-status="gmailStatus"
-                  :is-loading-status="isLoadingStatus"
-                  :bot-toggle-state="botToggleState"
-                  @bot-toggle="handleBotToggle"
-                  @config-saved="handleConfigSaved"
-                />
+                 <component
+                   :is="Component"
+                   :key="route.name"
+                   :gmail-status="gmailStatus"
+                   :is-loading-status="isLoadingStatus"
+                   :bot-toggle-state="botToggleState"
+                   @bot-toggle="handleBotToggle"
+                   @config-saved="handleConfigSaved"
+                 />
 
-            </RouterView>
-          </div>
+             </RouterView>
+           </div>
         </main>
       </div>
     </div>
