@@ -20,10 +20,17 @@ const ServicesView = () => import('@/views/ServicesView.vue')
 const ContactView = () => import('@/views/ContactView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const ProfileView = () => import('@/views/ProfileView.vue')
-const EmailAiBotView = () => import('@/views/EmailAiBotView.vue')
 const PrivacyPolicyView = () => import('@/views/PrivacyPolicyView.vue')
 const TermsOfServiceView = () => import('@/views/TermsOfServiceView.vue')
 const NotFoundView = () => import('@/views/NotFoundView.vue')
+
+// Email AI Bot layout + nested views
+const EmailAiBotLayout = () => import('@/views/email-ai-bot/EmailAiBotLayout.vue')
+const MailboxView = () => import('@/views/email-ai-bot/MailboxView.vue')
+const ConfigView = () => import('@/views/email-ai-bot/ConfigView.vue')
+const StatusView = () => import('@/views/email-ai-bot/StatusView.vue')
+const RemindersView = () => import('@/views/email-ai-bot/RemindersView.vue')
+const HistoryView = () => import('@/views/email-ai-bot/HistoryView.vue')
 
 /**
  * Route configuration with metadata and lazy loading
@@ -87,13 +94,66 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/email-ai-bot',
-    name: 'email-ai-bot',
-    component: EmailAiBotView,
+    component: EmailAiBotLayout,
     meta: {
-      title: 'Email AI Bot - Selling Through Email with AI',
-      description: 'AI-powered email reply bot for automated customer responses.',
       requiresAuth: true,
     },
+    children: [
+      {
+        path: '',
+        redirect: { name: 'email-bot-mailbox' },
+      },
+      {
+        path: 'mailbox',
+        name: 'email-bot-mailbox',
+        component: MailboxView,
+        meta: {
+          title: 'Mailbox - Email AI Bot',
+          description: 'Manage your email mailbox with AI assistance.',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'config',
+        name: 'email-bot-config',
+        component: ConfigView,
+        meta: {
+          title: 'Configuration - Email AI Bot',
+          description: 'Configure your email AI bot settings.',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'status',
+        name: 'email-bot-status',
+        component: StatusView,
+        meta: {
+          title: 'Status - Email AI Bot',
+          description: 'Check your email AI bot status and settings.',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'reminders',
+        name: 'email-bot-reminders',
+        component: RemindersView,
+        meta: {
+          title: 'Reminders - Email AI Bot',
+          description: 'Manage email reminders.',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'history',
+        name: 'email-bot-history',
+        component: HistoryView,
+        meta: {
+          title: 'History - Email AI Bot',
+          description: 'View email reminder history and statistics.',
+          requiresAuth: true,
+        },
+      },
+    ],
   },
   {
     path: '/privacy-policy',

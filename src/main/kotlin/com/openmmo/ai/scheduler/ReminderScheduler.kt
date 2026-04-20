@@ -41,6 +41,7 @@ class ReminderScheduler(
 
     /**
      * Process all enabled reminders every 5 minutes
+     * Check if bot is enabled for user before processing
      */
     @Scheduled(fixedRate = 60000) // Every 5 minutes
     fun processReminders() {
@@ -50,6 +51,11 @@ class ReminderScheduler(
 
             for (reminder in allReminders) {
                 try {
+                    if (!isBotEnabledForUser(reminder.userId)) {
+                        logger.debug("⏸️  Bot disabled for user ${reminder.userId}, skipping reminders")
+                        continue
+                    }
+
                     processReminder(reminder)
                 } catch (e: Exception) {
                     logger.error("Error processing reminder for ${reminder.contactEmail}", e)
@@ -57,6 +63,24 @@ class ReminderScheduler(
             }
         } catch (e: Exception) {
             logger.error("Error in processReminders scheduler", e)
+        }
+    }
+
+    /**
+     * ✅ Check if bot is enabled for user
+     * Query GmailBotConfig to verify bot status
+     */
+    private fun isBotEnabledForUser(userId: String): Boolean {
+        return try {
+            val botConfig = gmailBotConfigRepository.findByUserId(userId)
+            val isEnabled = botConfig?.enabled ?: false
+            if (!isEnabled) {
+                logger.debug("Bot is disabled for user $userId")
+            }
+            isEnabled
+        } catch (e: Exception) {
+            logger.error("Error checking bot status for user $userId: ${e.message}")
+            false  // Default to disabled if error
         }
     }
 

@@ -68,82 +68,108 @@
     </div>
 
     <div class="profile-shell">
+      <!-- Header -->
+
+
+      <!-- Main Content -->
       <div class="profile-grid">
+        <!-- Left Panel - Avatar & Basic Info -->
         <section class="panel overview">
-          <div class="avatar-block">
-            <div class="avatar">
-              <img
-                v-if="authStore.user?.avatar && !avatarFailed"
-                :src="authStore.user.avatar"
-                :alt="displayName"
-                class="avatar-image"
-                @error="handleAvatarError"
-              />
-              <div v-else class="avatar-fallback">{{ userInitials }}</div>
+          <div class="avatar-section">
+            <div class="avatar-container">
+              <div class="avatar">
+                <img
+                  v-if="authStore.user?.avatar && !avatarFailed"
+                  :src="authStore.user.avatar"
+                  :alt="displayName"
+                  class="avatar-image"
+                  @error="handleAvatarError"
+                />
+                <div v-else class="avatar-fallback">{{ userInitials }}</div>
+              </div>
+              <div class="avatar-glow"></div>
             </div>
 
-            <div class="identity">
-              <div class="display-name">{{ displayName }}</div>
+            <div class="identity-info">
+              <h2 class="display-name">{{ displayName }}</h2>
+              <p class="display-email">{{ authStore.user?.email }}</p>
+              <p class="username">@{{ authStore.user?.username }}</p>
             </div>
           </div>
+
+          <!-- Status Overview -->
+          <div class="status-overview">
+            <div class="status-item">
+              <span class="status-label">Account Status</span>
+              <span class="status-value" :class="{ active: authStore.user?.isActive }">
+                {{ authStore.user?.isActive ? '● Active' : '● Suspended' }}
+              </span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Email Verified</span>
+              <span class="status-value" :class="{ verified: authStore.user?.emailVerified }">
+                {{ authStore.user?.emailVerified ? '✓ Yes' : '✗ No' }}
+              </span>
+            </div>
+          </div>
+
         </section>
 
+        <!-- Right Panel - Details -->
         <section class="panel details">
-          <div class="info-grid">
-            <div class="info-card">
-              <p class="label">Username</p>
-              <p class="value">{{ authStore.user?.username }}</p>
+          <div class="details-content">
+            <!-- Account Information -->
+            <div class="info-section">
+              <h3 class="section-title">Account Information</h3>
+              <div class="info-grid">
+                <div class="info-card">
+                  <p class="label">Username</p>
+                  <p class="value mono">{{ authStore.user?.username }}</p>
+                </div>
+
+                <div class="info-card">
+                  <p class="label">Email Address</p>
+                  <p class="value">{{ authStore.user?.email || 'Not updated' }}</p>
+                </div>
+
+                <div class="info-card">
+                  <p class="label">Account Created</p>
+                  <p class="value">{{ formatDate(authStore.user?.createdAt || '') }}</p>
+                </div>
+
+                <div class="info-card">
+                  <p class="label">Last Login</p>
+                  <p class="value">
+                    {{
+                      authStore.user?.lastLoginAt
+                        ? formatDate(authStore.user.lastLoginAt)
+                        : 'No record'
+                    }}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div class="info-card">
-              <p class="label">Email</p>
-              <p class="value">{{ authStore.user?.email || 'Not updated' }}</p>
-            </div>
-
-            <div class="info-card">
-              <p class="label">Email status</p>
-              <p class="value">
-                <span class="chip" :class="{ positive: authStore.user?.emailVerified }">
-                  {{ authStore.user?.emailVerified ? 'Verified' : 'Unverified' }}
+            <!-- Roles Section -->
+            <div class="info-section">
+              <h3 class="section-title">Access Roles</h3>
+              <div class="roles-container">
+                <span
+                  v-for="role in authStore.user?.roles"
+                  :key="role"
+                  class="role-badge"
+                >
+                  {{ role }}
                 </span>
-              </p>
-            </div>
-
-            <div class="info-card">
-              <p class="label">Account status</p>
-              <p class="value">
-                <span class="chip" :class="{ positive: authStore.user?.isActive }">
-                  {{ authStore.user?.isActive ? 'Active' : 'Suspended' }}
-                </span>
-              </p>
-            </div>
-
-            <div class="info-card span-2">
-              <p class="label">Roles</p>
-              <div class="roles">
-                <span v-for="role in authStore.user?.roles" :key="role" class="role-badge">{{
-                  role
-                }}</span>
                 <span v-if="!authStore.user?.roles?.length" class="role-badge muted"
                   >No roles assigned</span
                 >
               </div>
             </div>
-
-            <div class="info-card">
-              <p class="label">Account created</p>
-              <p class="value">{{ formatDate(authStore.user?.createdAt || '') }}</p>
-            </div>
-
-            <div class="info-card">
-              <p class="label">Last login</p>
-              <p class="value">
-                {{
-                  authStore.user?.lastLoginAt ? formatDate(authStore.user.lastLoginAt) : 'No record'
-                }}
-              </p>
-            </div>
           </div>
+
+          <!-- Action Buttons -->
+
         </section>
       </div>
     </div>
@@ -151,16 +177,27 @@
 </template>
 
 <style scoped>
+  :root {
+    --primary: #00f0ff;
+    --accent: #ff006e;
+    --background: rgba(12, 18, 32, 0.9);
+    --surface: rgba(20, 28, 48, 0.6);
+    --border: rgba(0, 240, 255, 0.15);
+    --text-primary: #e8f7ff;
+    --text-secondary: rgba(232, 247, 255, 0.72);
+    --text-tertiary: rgba(232, 247, 255, 0.5);
+  }
+
   .profile-page {
-    max-height: 100vh;
+    min-height: 100vh;
     padding: 96px 32px 48px;
-    color: #e8f7ff;
+    color: var(--text-primary);
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
   }
 
   .profile-background {
-    position: absolute;
+    position: fixed;
     inset: 0;
     z-index: 1;
     pointer-events: none;
@@ -170,14 +207,14 @@
     position: absolute;
     border-radius: 50%;
     filter: blur(90px);
-    opacity: 0.16;
-    animation: float 7s ease-in-out infinite;
+    opacity: 0.12;
+    animation: float 8s ease-in-out infinite;
   }
 
   .orb-1 {
     width: 420px;
     height: 420px;
-
+    background: radial-gradient(circle, #00f0ff, transparent);
     top: -80px;
     right: -80px;
   }
@@ -185,6 +222,7 @@
   .orb-2 {
     width: 320px;
     height: 320px;
+    background: radial-gradient(circle, #ff006e, transparent);
     bottom: -120px;
     left: -80px;
     animation-delay: 1.8s;
@@ -201,115 +239,187 @@
   }
 
   @keyframes float {
-    0%,
-    100% {
+    0%, 100% {
       transform: translate(0, 0);
     }
     25% {
-      transform: translate(18px, -18px);
+      transform: translate(20px, -15px);
     }
     50% {
-      transform: translate(0, -28px);
+      transform: translate(0, -30px);
     }
     75% {
-      transform: translate(-18px, -18px);
+      transform: translate(-20px, -15px);
     }
   }
 
   .profile-shell {
     position: relative;
     z-index: 2;
-    width: min(1200px, 100%);
+    width: min(1280px, 100%);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
+    gap: 28px;
+  }
+
+  /* Header */
+  .profile-header {
+    animation: slideDown 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .header-top {
+    display: flex;
+    align-items: center;
     gap: 20px;
+    margin-bottom: 12px;
   }
 
-  .profile-top {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 16px;
-    align-items: center;
-    background: rgba(12, 18, 32, 0.8);
-    border: 1px solid rgba(0, 240, 255, 0.18);
-    border-radius: 18px;
-    padding: 18px 20px;
-    backdrop-filter: blur(12px);
-  }
-
-  .title-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .title-row {
+  .nav-button {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(0, 240, 255, 0.08);
+    color: var(--primary);
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
-  .eyebrow {
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
+  .nav-button:hover {
+    border-color: rgba(0, 240, 255, 0.35);
+    background: rgba(0, 240, 255, 0.15);
+    transform: translateX(-2px);
   }
 
-  .profile-top h1 {
+  .page-title {
     margin: 0;
-    font-size: 26px;
+    font-size: 32px;
     font-weight: 700;
-    background: linear-gradient(135deg, #00f0ff 0%, #ffffffb3 50%, #ff006e 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #ffffffb3 50%, var(--accent) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
   }
 
-  .subtitle {
+  .header-spacer {
+    flex: 1;
+  }
+
+  .header-subtitle {
     margin: 0;
-    color: rgba(232, 247, 255, 0.72);
+    color: var(--text-secondary);
     font-size: 14px;
+    font-weight: 400;
   }
 
+  /* Grid Layout */
   .profile-grid {
     display: grid;
-    grid-template-columns: 360px 1fr;
-    gap: 16px;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
     align-items: start;
   }
 
   .panel {
-    background: rgba(12, 18, 32, 0.78);
-    border: 1px solid rgba(0, 240, 255, 0.16);
-    border-radius: 18px;
-    padding: 20px;
-    backdrop-filter: blur(10px);
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 28px;
+    backdrop-filter: blur(12px);
+    transition: all 0.3s ease;
+    animation: fadeInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .panel:hover {
+    border-color: rgba(0, 240, 255, 0.25);
+    background: rgba(20, 28, 48, 0.8);
+  }
+
+  /* Overview Panel */
   .overview {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 24px;
   }
 
-  .avatar-block {
-    display: grid;
-    grid-template-columns: 104px 1fr;
-    gap: 16px;
+  .avatar-section {
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    gap: 18px;
+    text-align: center;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .avatar-container {
+    position: relative;
+    margin-bottom: 8px;
   }
 
   .avatar {
-    width: 104px;
-    height: 104px;
+    width: 120px;
+    height: 120px;
     border-radius: 50%;
-    border: 3px solid rgba(0, 240, 255, 0.35);
-    background: linear-gradient(135deg, rgba(0, 240, 255, 0.12), rgba(255, 0, 110, 0.12));
+    border: 2px solid var(--primary);
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(255, 0, 110, 0.15));
     overflow: hidden;
     display: grid;
     place-items: center;
+    position: relative;
+    z-index: 1;
+    transition: all 0.3s ease;
+  }
+
+  .avatar:hover {
+    border-color: var(--accent);
+    transform: scale(1.05);
+  }
+
+  .avatar-glow {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 0.3;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.1);
+    }
   }
 
   .avatar-image {
@@ -319,62 +429,159 @@
   }
 
   .avatar-fallback {
-    font-size: 38px;
+    font-size: 42px;
     font-weight: 700;
-    background: linear-gradient(135deg, #00f0ff, #ff006e);
+    background: linear-gradient(135deg, var(--primary), var(--accent));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 
-  .identity {
+  .identity-info {
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
 
   .display-name {
-    font-size: 22px;
+    margin: 0;
+    font-size: 24px;
     font-weight: 700;
+    color: var(--text-primary);
   }
 
   .display-email {
+    margin: 0;
     font-size: 14px;
-    color: rgba(232, 247, 255, 0.78);
+    color: var(--text-secondary);
   }
 
   .username {
+    margin: 0;
     font-size: 13px;
-    color: rgba(232, 247, 255, 0.64);
+    color: var(--text-tertiary);
+    font-family: 'Courier New', monospace;
   }
 
-  .chip-row {
+  /* Status Overview */
+  .status-overview {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    flex-direction: column;
+    gap: 12px;
   }
 
-  .chip {
-    display: inline-flex;
+  .status-item {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    padding: 12px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
-    font-size: 13px;
-    color: rgba(232, 247, 255, 0.9);
-    margin: 10px 0;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
   }
 
-  .chip.positive {
-    border-color: var(--primary);
+  .status-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(0, 240, 255, 0.2);
+  }
+
+  .status-label {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+
+  .status-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .status-value.active {
+    color: #4ade80;
+  }
+
+  .status-value.verified {
     color: var(--primary);
   }
 
-  .roles-block {
+  /* Action Buttons */
+  .action-buttons {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
+  }
+
+  .btn-secondary {
+    padding: 12px 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 0, 110, 0.35);
+    background: rgba(255, 0, 110, 0.12);
+    color: #ff4f8b;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .btn-secondary:hover {
+    border-color: rgba(255, 0, 110, 0.6);
+    background: rgba(255, 0, 110, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(255, 0, 110, 0.15);
+  }
+
+  /* Details Panel */
+  .details {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .details-content {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .info-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation-fill-mode: both;
+  }
+
+  .info-section:nth-child(2) {
+    animation-delay: 0.1s;
+  }
+
+  .section-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .info-card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    transition: all 0.3s ease;
+  }
+
+  .info-card:hover {
+    border-color: rgba(0, 240, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
   }
 
   .label {
@@ -382,167 +589,416 @@
     font-size: 12px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(232, 247, 255, 0.6);
+    color: var(--text-tertiary);
+    font-weight: 600;
   }
 
-  .roles {
+  .value {
+    margin: 8px 0 0;
+    font-size: 14px;
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+
+  .value.mono {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--primary);
+  }
+
+  /* Roles */
+  .roles-container {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
   }
 
   .role-badge {
-    padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
     border-radius: 10px;
     border: 1px solid var(--primary);
+    background: rgba(0, 240, 255, 0.08);
     color: var(--primary);
-    background: rgba(255, 255, 255, 0.06);
     font-size: 12px;
     font-weight: 600;
-    margin: 10px 0;
+    transition: all 0.3s ease;
+  }
+
+  .role-badge:hover {
+    background: rgba(0, 240, 255, 0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 240, 255, 0.2);
   }
 
   .role-badge.muted {
-    border-color: rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(232, 247, 255, 0.7);
-  }
-
-  .timeline {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .timeline-item {
-    padding: 12px;
-    border-radius: 12px;
-    border: 1px solid rgba(0, 240, 255, 0.18);
+    border-color: var(--border);
     background: rgba(255, 255, 255, 0.04);
+    color: var(--text-tertiary);
   }
 
-  .value {
-    margin: 6px 0 0;
-    font-size: 14px;
-    color: #e8f7ff;
-  }
+  /* Responsive */
+  @media (max-width: 1280px) {
+    .profile-grid {
+      gap: 20px;
+    }
 
-  .details .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 12px;
-  }
-
-  .info-card {
-    border: 1px solid rgba(0, 240, 255, 0.18);
-    border-radius: 12px;
-    padding: 14px;
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .info-card .value {
-    margin: 6px 0 0;
-  }
-
-  .span-2 {
-    grid-column: span 2;
-  }
-
-  .icon-button,
-  .ghost-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border-radius: 12px;
-    border: 1px solid rgba(0, 240, 255, 0.25);
-    background: rgba(0, 240, 255, 0.08);
-    color: #00f0ff;
-    padding: 10px 14px;
-    cursor: pointer;
-    transition: all 0.25s ease;
-  }
-
-  .icon-button:hover,
-  .ghost-button:hover {
-    border-color: rgba(0, 240, 255, 0.4);
-    transform: translateY(-1px);
-  }
-
-  .ghost-button.danger {
-    border-color: rgba(255, 0, 110, 0.35);
-    background: rgba(255, 0, 110, 0.12);
-    color: #ff4f8b;
-  }
-
-  .status-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.05);
-    font-size: 12px;
-    color: rgba(232, 247, 255, 0.9);
-  }
-
-  .status-chip.online {
-    border-color: rgba(0, 240, 255, 0.35);
-    background: rgba(0, 240, 255, 0.12);
-    color: #00f0ff;
+    .panel {
+      padding: 24px;
+    }
   }
 
   @media (max-width: 1024px) {
+    .profile-page {
+      padding: 88px 28px 40px;
+    }
+
+    .profile-shell {
+      gap: 24px;
+    }
+
     .profile-grid {
       grid-template-columns: 1fr;
+      gap: 20px;
     }
 
-    .avatar-block {
-      grid-template-columns: auto;
+    .avatar-section {
+      flex-direction: row;
+      text-align: left;
+      align-items: flex-start;
+      gap: 20px;
+      padding-bottom: 20px;
+    }
+
+    .avatar-container {
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+
+    .avatar {
+      width: 110px;
+      height: 110px;
+    }
+
+    .display-name {
+      font-size: 22px;
+    }
+
+    .page-title {
+      font-size: 28px;
+    }
+
+    .details-content {
+      flex-direction: row;
+      gap: 24px;
+    }
+
+    .info-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .profile-page {
+      padding: 0 20px ;
+    }
+
+    .profile-shell {
+      gap: 20px;
+    }
+
+    .panel {
+      padding: 20px;
+      border-radius: 16px;
+    }
+
+    .page-title {
+      font-size: 24px;
+    }
+
+    .header-top {
+      gap: 16px;
+    }
+
+    .nav-button {
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
+    }
+
+    .info-grid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .avatar-section {
+      flex-direction: column;
       text-align: center;
-      justify-items: center;
-    }
-
-    .identity {
       align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .span-2 {
-      grid-column: span 1;
+    .avatar {
+      width: 100px;
+      height: 100px;
+    }
+
+    .avatar-glow {
+      inset: -6px;
+    }
+
+    .avatar-fallback {
+      font-size: 36px;
+    }
+
+    .details-content {
+      gap: 24px;
+      flex-direction: column;
+    }
+
+    .section-title {
+      font-size: 13px;
+    }
+
+    .status-overview {
+      gap: 10px;
+    }
+
+    .status-item {
+      padding: 10px;
+    }
+
+    .status-label {
+      font-size: 12px;
+    }
+
+    .status-value {
+      font-size: 12px;
     }
   }
 
   @media (max-width: 640px) {
     .profile-page {
-      padding: 80px 16px 32px;
+      padding: 75px 16px 32px;
     }
 
-    .profile-top {
-      grid-template-columns: 1fr;
-      justify-items: start;
+    .profile-shell {
+      gap: 16px;
     }
 
-    .ghost-button {
-      width: 100%;
+    .header-top {
+      gap: 12px;
+      margin-bottom: 8px;
     }
 
-    .chip-row {
-      flex-direction: column;
-    }
-  }
-
-  @media (max-width: 420px) {
-    .profile-top h1 {
-      font-size: 22px;
+    .page-title {
+      font-size: 20px;
     }
 
-    .profile-top {
-      padding: 16px;
+    .header-subtitle {
+      font-size: 13px;
     }
 
     .panel {
       padding: 16px;
+      border-radius: 14px;
+    }
+
+    .avatar {
+      width: 95px;
+      height: 95px;
+    }
+
+    .avatar-fallback {
+      font-size: 32px;
+    }
+
+    .display-name {
+      font-size: 18px;
+    }
+
+    .display-email {
+      font-size: 13px;
+    }
+
+    .username {
+      font-size: 12px;
+    }
+
+    .info-card {
+      padding: 12px;
+      border-radius: 10px;
+    }
+
+    .label {
+      font-size: 11px;
+    }
+
+    .value {
+      font-size: 13px;
+      margin-top: 6px;
+    }
+
+    .role-badge {
+      padding: 6px 10px;
+      font-size: 11px;
+    }
+
+    .btn-secondary {
+      padding: 10px 16px;
+      font-size: 13px;
+      border-radius: 10px;
+    }
+
+    .info-grid {
+      gap: 8px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .profile-page {
+      padding: 0 14px;
+    }
+
+    .page-title {
+      font-size: 18px;
+    }
+
+    .header-top {
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .nav-button {
+      width: 32px;
+      height: 32px;
+      font-size: 14px;
+    }
+
+    .header-subtitle {
+      font-size: 12px;
+    }
+
+    .panel {
+      padding: 14px;
+      border-radius: 12px;
+    }
+
+    .avatar {
+      width: 90px;
+      height: 90px;
+    }
+
+    .avatar-glow {
+      inset: -4px;
+    }
+
+    .avatar-fallback {
+      font-size: 28px;
+    }
+
+    .display-name {
+      font-size: 16px;
+    }
+
+    .display-email {
+      font-size: 12px;
+    }
+
+    .username {
+      font-size: 11px;
+    }
+
+    .avatar-section {
+      gap: 12px;
+    }
+
+    .section-title {
+      font-size: 12px;
+    }
+
+    .label {
+      font-size: 10px;
+    }
+
+    .value {
+      font-size: 12px;
+    }
+
+    .value.mono {
+      font-size: 11px;
+    }
+
+    .status-item {
+      padding: 8px;
+      gap: 8px;
+    }
+
+    .status-label {
+      font-size: 11px;
+    }
+
+    .status-value {
+      font-size: 11px;
+    }
+
+    .info-card {
+      padding: 10px;
+    }
+
+    .role-badge {
+      padding: 5px 8px;
+      font-size: 10px;
+    }
+
+    .btn-secondary {
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
+    .roles-container {
+      gap: 6px;
+    }
+
+    .info-grid {
+      gap: 6px;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .profile-page {
+      padding: 68px 12px 24px;
+    }
+
+    .page-title {
+      font-size: 16px;
+    }
+
+    .panel {
+      padding: 12px;
+    }
+
+    .avatar {
+      width: 80px;
+      height: 80px;
+    }
+
+    .display-name {
+      font-size: 14px;
+    }
+
+    .info-card {
+      padding: 8px;
+    }
+
+    .label {
+      font-size: 9px;
+    }
+
+    .value {
+      font-size: 11px;
     }
   }
 </style>

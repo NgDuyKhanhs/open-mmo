@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { toast } from 'vue3-toastify'
 import {
@@ -9,18 +9,18 @@ import { useRouter } from 'vue-router'
 
 interface PageCache {
   emails: Email[]
-  nextPageToken: string | null
+  nextPageToken: string | null  /* Token để fetch trang tiếp theo */
 }
 
 export function useMailboxPagination() {
   const authStore = useAuthStore()
   const router = useRouter()
   const emails = ref<Email[]>([])
-  const emailsCache = ref<PageCache[]>([])
+  const emailsCache = ref<PageCache[]>([])  /* Cache all pages */
   const selectedBox = ref<'inbox' | 'sent' | 'spam' | 'trash'>('inbox')
   const selectedEmail = ref<Email | null>(null)
   const isLoading = ref(false)
-  const currentPageToken = ref<string | null>(null)
+  const currentPageToken = ref<string | null>(null)  /* Token để fetch trang TIẾP THEO */
   const currentPageIndex = ref(0)
   const hasNextPage = ref(false)
 
@@ -59,7 +59,8 @@ export function useMailboxPagination() {
 
       emails.value = response.emails
       currentPageToken.value = response.nextPageToken || null
-      pageCache.value = [{
+      /* ✅ FIX: Initialize cache with page 0 */
+      emailsCache.value = [{
         emails: response.emails,
         nextPageToken: response.nextPageToken || null
       }]
@@ -97,19 +98,25 @@ export function useMailboxPagination() {
   const loadPreviousPage = async () => {
     if (currentPageIndex.value <= 0) return
 
+    /* ✅ FIX: Check cache trước, không được decrement "mồ côi" */
+    const prevPageIndex = currentPageIndex.value - 1
+    const cachedPage = emailsCache.value[prevPageIndex]
+
+    if (!cachedPage) {
+      toast.error('Previous page cache not found')
+      return
+    }
+
     isLoading.value = true
     try {
-      currentPageIndex.value--
-      const cachedPage = emailsCache.value[currentPageIndex.value]
-
-      if (cachedPage) {
-        emails.value = cachedPage.emails
-        currentPageToken.value = cachedPage.nextPageToken || null
-        hasNextPage.value = !!cachedPage.nextPageToken
-        window.scrollTo(0, 0)
-      }
+      currentPageIndex.value = prevPageIndex
+      emails.value = cachedPage.emails
+      /* ✅ FIX: Set currentPageToken từ cache cho trang hiện tại */
+      /* currentPageToken là token để fetch trang TIẾP THEO của trang hiện tại */
+      currentPageToken.value = cachedPage.nextPageToken || null
+      hasNextPage.value = !!cachedPage.nextPageToken
+      window.scrollTo(0, 0)
     } catch (err) {
-      currentPageIndex.value++
       toast.error(err instanceof Error ? err.message : 'Error loading previous page')
     } finally {
       isLoading.value = false
@@ -119,6 +126,26 @@ export function useMailboxPagination() {
   const loadNextPage = async () => {
     if (!hasNextPage.value || isLoading.value || !authStore.accessToken) return
 
+    /* ✅ FIX: Check nếu page tiếp theo đã cache, dùng cache */
+    const nextPageIndex = currentPageIndex.value + 1
+    if (emailsCache.value[nextPageIndex]) {
+      isLoading.value = true
+      try {
+        const cachedPage = emailsCache.value[nextPageIndex]
+        currentPageIndex.value = nextPageIndex
+        emails.value = cachedPage.emails
+        currentPageToken.value = cachedPage.nextPageToken || null
+        hasNextPage.value = !!cachedPage.nextPageToken
+        window.scrollTo(0, 0)
+        return
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Error loading page from cache')
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    /* Nếu không có cache, fetch từ server */
     isLoading.value = true
     try {
       const response = await getMailboxPage(
@@ -129,13 +156,15 @@ export function useMailboxPagination() {
       )
 
       emails.value = response.emails
-      currentPageToken.value = response.nextPageToken || null
-      currentPageIndex.value++
+      currentPageIndex.value = nextPageIndex
+      /* ✅ FIX: Cache page này ngay */
       emailsCache.value.push({
         emails: response.emails,
         nextPageToken: response.nextPageToken || null
       })
 
+      /* ✅ FIX: currentPageToken là token để fetch trang TIẾP THEO */
+      currentPageToken.value = response.nextPageToken || null
       hasNextPage.value = !!response.nextPageToken
       window.scrollTo(0, 0)
     } catch (err) {
@@ -163,9 +192,6 @@ export function useMailboxPagination() {
     selectedEmail.value = null
   }
 
-  // Use ref for pageCache to maintain reactivity
-  const pageCache = ref<PageCache[]>([])
-
   return {
     emails,
     selectedBox,
@@ -174,7 +200,7 @@ export function useMailboxPagination() {
     currentPageToken,
     currentPageIndex,
     hasNextPage,
-    pageCache,
+    emailsCache,
     formatDate,
     extractEmail,
     loadEmails,
