@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
 import { useAiProvider } from '@/composables/email-ai-bot/useAiProvider'
+import { useGmailMetaStore } from '@/stores/useGmailMetaStore'
 import { useMailboxPagination } from '@/composables/email-ai-bot/useMailboxPagination'
 import { Bot, Clock } from 'lucide-vue-next'
 
 const provider = useAiProvider()
+const gmailMetaStore = useGmailMetaStore()
 const mailbox = useMailboxPagination()
 
 const props = defineProps<{
@@ -17,9 +18,10 @@ const emit = defineEmits<{
   'bot-toggle': [event: Event]
 }>()
 
-onMounted(async () => {
-  await provider.loadAiProvider()
-})
+// Load initial AI provider from store if available
+if (gmailMetaStore.aiProvider) {
+  provider.selectedAiProvider.value = gmailMetaStore.aiProvider
+}
 </script>
 
 <template>

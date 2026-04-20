@@ -2,11 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useBotConfig } from '@/composables/email-ai-bot/useBotConfig'
 import { useMailboxPagination } from '@/composables/email-ai-bot/useMailboxPagination'
+import { useGmailMetaStore } from '@/stores/useGmailMetaStore'
 import { toast } from 'vue3-toastify'
 import { AlertTriangle, HelpCircle, X } from 'lucide-vue-next'
 
 const mailbox = useMailboxPagination()
 const config = useBotConfig()
+const gmailMetaStore = useGmailMetaStore()
 
 const props = defineProps<{
   gmailStatus: any
@@ -24,7 +26,8 @@ const saveConfigAndReload = async () => {
   try {
     await config.updateConfig(props.gmailStatus)
     await mailbox.loadEmails()
-    // Emit event to trigger parent to reload Gmail status (which includes triggerSubject)
+    // Refresh Gmail status to get updated triggerSubject
+    await gmailMetaStore.refresh()
     emit('config-saved')
     toast.success('Configuration saved! Filter applied to emails.')
   } catch (err) {

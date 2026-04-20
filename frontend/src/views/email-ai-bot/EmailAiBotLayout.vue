@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref,  onMounted, provide } from 'vue'
+import { ref, onMounted, provide, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Mail,
@@ -10,10 +10,10 @@ import {
 } from 'lucide-vue-next'
 import { toast } from 'vue3-toastify'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useGmailMetaStore } from '@/stores/useGmailMetaStore'
 import { useMailboxPagination } from '@/composables/email-ai-bot/useMailboxPagination'
-import { useAiProvider } from '@/composables/email-ai-bot/useAiProvider'
 import { useEmailBotStatus } from '@/composables/email-ai-bot/useEmailBotStatus'
-import { type GmailStatus } from '@/services/gmailService'
+import { enableBot, disableBot } from '@/services/gmailService'
 import navbarLogoUrl from '@/assets/navbar-logo.png'
 import '@/styles/email-ai-bot.css'
 
@@ -21,15 +21,16 @@ import '@/styles/email-ai-bot.css'
 const router = useRouter()
 const route = useRoute()
 
+// Stores
+const authStore = useAuthStore()
+const gmailMetaStore = useGmailMetaStore()
+
 // Auth & Status
-const provider = useAiProvider()
-const { toggleBot, status: emailBotStatus, loadStatus, connectGmail } = useEmailBotStatus()
+const { connectGmail } = useEmailBotStatus()
 
 // UI State
 const navbarExpanded = ref(true)
 const botToggleState = ref(false)
-const gmailStatus = ref<GmailStatus | null>(null)
-const isLoadingStatus = ref(false)
 
 // Tab list for navigation
 const tabs = [
@@ -40,32 +41,6 @@ const tabs = [
   { name: 'email-bot-history', label: 'History', icon: History },
 ]
 
-// Load Gmail status on mount
-const loadGmailStatus = async () => {
-  try {
-    isLoadingStatus.value = true
-    // Use the proper gmailService function through useEmailBotStatus composable
-    await loadStatus()
-    gmailStatus.value = emailBotStatus.value
-    botToggleState.value = gmailStatus.value.botEnabled
-
-    // Handle OAuth query parameters (from Gmail OAuth callback)
-    if (route.query.connected === '1') {
-      toast.success('Gmail connected successfully!')
-      // Clear query and redirect to mailbox
-      router.replace({ name: 'email-bot-mailbox' })
-    } else if (route.query.error) {
-      toast.error(`Connection failed: ${route.query.error}`)
-      router.replace({ name: 'email-bot-mailbox' })
-    }
-  } catch (err) {
-    console.error('Failed to load Gmail status:', err)
-    toast.error('Failed to load Gmail status')
-  } finally {
-    isLoadingStatus.value = false
-  }
-}
-
 // Handle bot toggle
 const handleBotToggle = async (event: Event) => {
   const checkbox = event.target as HTMLInputElement
@@ -73,12 +48,25 @@ const handleBotToggle = async (event: Event) => {
   botToggleState.value = isChecked
 
   try {
-    await toggleBot()
+    if (isChecked) {
+      await enableBot(authStore.accessToken!)
+      toast.success('Bot enabled')
+    } else {
+      await disableBot(authStore.accessToken!)
+      toast.success('Bot disabled')
+    }
+    // Refresh metadata to get updated status
+    await gmailMetaStore.refresh()
   } catch (err) {
     botToggleState.value = !isChecked
     console.error('Failed to toggle bot:', err)
     toast.error('Failed to toggle bot status')
   }
+}
+
+// Handle config saved event - reload Gmail status to get updated triggerSubject
+const handleConfigSaved = async () => {
+  await gmailMetaStore.refresh()
 }
 
 // Check if tab is active
@@ -91,22 +79,47 @@ const navigateToTab = (tabName: string) => {
   router.push({ name: tabName })
 }
 
-// Handle config saved event - reload Gmail status to get updated triggerSubject
-const handleConfigSaved = async () => {
-  await loadGmailStatus()
-}
-
 // Initialize on mount
 onMounted(async () => {
-  await loadGmailStatus()
-  await provider.loadAiProvider()
+  try {
+    await gmailMetaStore.ensureLoaded()
+    botToggleState.value = gmailMetaStore.gmailStatus?.botEnabled ?? false
+
+    // Handle OAuth query parameters (from Gmail OAuth callback)
+    if (route.query.connected === '1') {
+      toast.success('Gmail connected successfully!')
+      // Clear query and redirect to mailbox
+      router.replace({ name: 'email-bot-mailbox' })
+    } else if (route.query.error) {
+      toast.error(`Connection failed: ${route.query.error}`)
+      router.replace({ name: 'email-bot-mailbox' })
+    }
+  } catch (err) {
+    console.error('Failed to load Gmail metadata:', err)
+    toast.error('Failed to load Gmail metadata')
+  }
 })
 
+// Watch for access token changes to reset cache
+watch(
+  () => authStore.accessToken,
+  (newToken) => {
+    if (!newToken) {
+      // User logged out
+      gmailMetaStore.reset()
+    } else {
+      // Token changed, reload metadata
+      gmailMetaStore.reset()
+      gmailMetaStore.ensureLoaded()
+    }
+  }
+)
+
 // Provide shared data to child routes
-provide('gmailStatus', gmailStatus)
+provide('gmailStatus', gmailMetaStore.gmailStatus)
 provide('botToggleState', botToggleState)
 provide('handleBotToggle', handleBotToggle)
-provide('isLoadingStatus', isLoadingStatus)
+provide('isLoadingStatus', gmailMetaStore.isLoadingStatus)
 </script>
 
 <template>
@@ -114,7 +127,7 @@ provide('isLoadingStatus', isLoadingStatus)
     <div class="page-shell">
       <div class="page-container">
         <!-- Not Connected Screen -->
-        <div v-if="!gmailStatus?.connected" class="not-connected-screen">
+        <div v-if="!gmailMetaStore.gmailStatus?.connected" class="not-connected-screen">
           <div class="not-connected-card">
             <div class="not-connected-logo">
               <img :src="navbarLogoUrl" alt="OpenMMO Logo" class="logo-image" />
@@ -209,9 +222,9 @@ provide('isLoadingStatus', isLoadingStatus)
 
                  <component
                    :is="Component"
-                   :key="route.name"
-                   :gmail-status="gmailStatus"
-                   :is-loading-status="isLoadingStatus"
+                   :key="route.fullPath"
+                   :gmail-status="gmailMetaStore.gmailStatus"
+                   :is-loading-status="gmailMetaStore.isLoadingStatus"
                    :bot-toggle-state="botToggleState"
                    @bot-toggle="handleBotToggle"
                    @config-saved="handleConfigSaved"
