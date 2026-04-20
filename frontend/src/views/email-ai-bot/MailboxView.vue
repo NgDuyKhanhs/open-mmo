@@ -76,7 +76,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="mailbox.currentPageIndex.value > 0 || mailbox.hasNextPage.value" class="pagination-controls">
+     <div v-if="(mailbox.currentPageIndex.value > 0 || mailbox.hasNextPage.value) && mailbox.emails.value.length > 0" class="pagination-controls">
       <button
         @click="mailbox.loadPreviousPage()"
         class="pagination-btn"

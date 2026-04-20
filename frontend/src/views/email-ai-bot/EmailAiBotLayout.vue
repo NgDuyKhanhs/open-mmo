@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, provide } from 'vue'
+import { ref,  onMounted, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Mail, Settings, Bot, Clock, X } from 'lucide-vue-next'
+import {
+  Mail,
+  Settings,
+  Bot,
+  History,
+  Clock2,
+} from 'lucide-vue-next'
 import { toast } from 'vue3-toastify'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useMailboxPagination } from '@/composables/email-ai-bot/useMailboxPagination'
@@ -16,8 +22,6 @@ const router = useRouter()
 const route = useRoute()
 
 // Auth & Status
-const authStore = useAuthStore()
-const mailbox = useMailboxPagination()
 const provider = useAiProvider()
 const { toggleBot, status: emailBotStatus, loadStatus, connectGmail } = useEmailBotStatus()
 
@@ -32,8 +36,8 @@ const tabs = [
   { name: 'email-bot-mailbox', label: 'Mailbox', icon: Mail },
   { name: 'email-bot-config', label: 'Config', icon: Settings },
   { name: 'email-bot-status', label: 'Status', icon: Bot },
-  { name: 'email-bot-reminders', label: 'Reminders', icon: Clock },
-  { name: 'email-bot-history', label: 'History', icon: Mail },
+  { name: 'email-bot-reminders', label: 'Reminders', icon: Clock2 },
+  { name: 'email-bot-history', label: 'History', icon: History },
 ]
 
 // Load Gmail status on mount
@@ -85,7 +89,6 @@ const isTabActive = (tabName: string) => {
 // Navigate to tab
 const navigateToTab = (tabName: string) => {
   router.push({ name: tabName })
-
 }
 
 // Handle config saved event - reload Gmail status to get updated triggerSubject
@@ -194,8 +197,8 @@ provide('isLoadingStatus', isLoadingStatus)
                 :class="['tab-button', { active: isTabActive(tab.name) }]"
                 :title="tab.label"
               >
-                <component :is="tab.icon" :size="18" class="tab-icon" />
-                <span v-if="!navbarExpanded" class="tab-label">{{ tab.label }}</span>
+                 <component :is="tab.icon" :size="18" class="tab-icon" />
+                 <span class="tab-label">{{ tab.label }}</span>
               </button>
             </div>
           </div>
@@ -203,7 +206,7 @@ provide('isLoadingStatus', isLoadingStatus)
           <!-- Tab Content - RouterView will render the current tab view -->
           <div class="tab-content">
             <RouterView v-slot="{ Component, route }">
-              <Transition name="route-fade-slide" mode="out-in">
+
                 <component
                   :is="Component"
                   :key="route.fullPath"
@@ -213,7 +216,7 @@ provide('isLoadingStatus', isLoadingStatus)
                   @bot-toggle="handleBotToggle"
                   @config-saved="handleConfigSaved"
                 />
-              </Transition>
+
             </RouterView>
           </div>
         </main>

@@ -246,32 +246,32 @@ onMounted(async () => {
               </tbody>
             </table>
           </div>
-          <div class="table-pagination-controls" v-if="remindersTotalPages > 1">
-            <span class="pagination-info-text">
-              Page {{ remindersPage }} of {{ remindersTotalPages }} ({{
-                reminders.reminders.value.length
-              }}
-              total)
-            </span>
-            <div class="pagination-buttons">
-              <button
-                @click="prevRemindersPage()"
-                class="pagination-btn"
-                :disabled="remindersPage === 1"
-                title="Previous page"
-              >
-                ← Prev
-              </button>
-              <button
-                @click="nextRemindersPage()"
-                class="pagination-btn"
-                :disabled="remindersPage === remindersTotalPages"
-                title="Next page"
-              >
-                Next →
-              </button>
-            </div>
-          </div>
+          <div class="table-pagination-controls" v-if="reminders.reminders.value.length > itemsPerPage">
+             <span class="pagination-info-text">
+               Page {{ remindersPage }} of {{ remindersTotalPages }} ({{
+                 reminders.reminders.value.length
+               }}
+               total)
+             </span>
+             <div class="pagination-buttons">
+               <button
+                 @click="prevRemindersPage()"
+                 class="pagination-btn"
+                 :disabled="remindersPage === 1"
+                 title="Previous page"
+               >
+                 ← Prev
+               </button>
+               <button
+                 @click="nextRemindersPage()"
+                 class="pagination-btn"
+                 :disabled="remindersPage === remindersTotalPages"
+                 title="Next page"
+               >
+                 Next →
+               </button>
+             </div>
+           </div>
         </div>
         <div v-else class="no-reminders">
           <p>No reminders configured yet</p>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { RefreshCw, Clock, X } from 'lucide-vue-next'
+import { RefreshCw, Clock, X, ChevronDown } from 'lucide-vue-next'
 import { toast } from 'vue3-toastify'
 import { useReminderHistory } from '@/composables/email-ai-bot/useReminderHistory'
 import type { ReminderHistory } from '@/services/reminderService.ts'
@@ -23,17 +23,46 @@ const historyDetailModal = ref<ReminderHistory | null>(null)
 // Filter states
 const filterHistoryStatus = ref('')
 const filterHistoryContact = ref('')
+const filterHistorySubject = ref('')
+
+// Stats panel state
+const isStatsExpanded = ref(false)
 
 // Pagination
 const historyPage = ref(1)
 const itemsPerPage = 10
+
+// ...existing code...
+
+// Stats from API
+const totalReminders = computed(() => {
+  return history.reminderHistoryStats.value?.total || 0
+})
+
+const sentCount = computed(() => {
+  return history.reminderHistoryStats.value?.sent || 0
+})
+
+const failedCount = computed(() => {
+  return history.reminderHistoryStats.value?.failed || 0
+})
+
+const pendingCount = computed(() => {
+  return history.reminderHistoryStats.value?.skipped || 0
+})
+
+const successRate = computed(() => {
+  return history.reminderHistoryStats.value?.successRate || 0
+})
 
 // Computed
 const filteredReminderHistories = computed(() => {
   return history.reminderHistories.value.filter(h => {
     const statusMatch = !filterHistoryStatus.value || h.status === filterHistoryStatus.value
     const contactMatch = !filterHistoryContact.value || h.contactEmail.toLowerCase().includes(filterHistoryContact.value.toLowerCase())
-    return statusMatch && contactMatch
+    const subjectMatch = !filterHistorySubject.value || h.subject.toLowerCase().includes(filterHistorySubject.value.toLowerCase())
+
+    return statusMatch && contactMatch && subjectMatch
   })
 })
 
@@ -117,7 +146,7 @@ const prevHistoryPage = () => {
 }
 
 // Reset page on filter change
-watch([filterHistoryStatus, filterHistoryContact], () => {
+watch([filterHistoryStatus, filterHistoryContact, filterHistorySubject], () => {
   historyPage.value = 1
 })
 
@@ -141,49 +170,58 @@ onMounted(async () => {
     </div>
 
     <div class="history-content">
-      <!-- Stats Cards -->
-      <div class="history-stats-header">
-        <div class="stats-card">
-          <div class="stats-label">Total</div>
-          <div class="stats-value">{{ history.reminderHistories?.value?.length || 0 }}</div>
-        </div>
-        <div class="stats-card">
-          <div class="stats-label">Sent ✓</div>
-          <div class="stats-value stats-success">
-            {{
-              history.reminderHistories?.value?.filter((h: any) => h.status === 'sent').length || 0
-            }}
+      <!-- Stats Panel - Collapsible -->
+      <div class="stats-panel">
+        <!-- Stats Header -->
+        <div class="stats-panel-header" @click="isStatsExpanded = !isStatsExpanded">
+          <div class="stats-header-left">
+            <ChevronDown
+              :size="20"
+              class="stats-chevron"
+              :class="{ expanded: isStatsExpanded }"
+            />
+            <h4 class="stats-panel-title">History Stats</h4>
+          </div>
+          <div v-if="!isStatsExpanded" class="stats-summary">
+            <span class="summary-item">Total: {{ totalReminders }}</span>
+            <span class="summary-divider">•</span>
+            <span class="summary-item" v-if="totalReminders > 0">
+              Success: {{ successRate }}%
+            </span>
           </div>
         </div>
-        <div class="stats-card">
-          <div class="stats-label">Failed ✕</div>
-          <div class="stats-value stats-error">
-            {{
-              history.reminderHistories?.value?.filter((h: any) => h.status === 'failed').length ||
-              0
-            }}
-          </div>
-        </div>
-        <div class="stats-card">
-          <div class="stats-label">Pending ◐</div>
-          <div class="stats-value stats-pending">
-            {{
-              history.reminderHistories?.value?.filter((h: any) => h.status === 'pending').length ||
-              0
-            }}
-          </div>
-        </div>
-        <div v-if="history.reminderHistories?.value?.length > 0" class="stats-card stats-rate">
-          <div class="stats-label">Success Rate</div>
-          <div class="stats-value stats-rate-value">
-            {{
-              Math.round(
-                ((history.reminderHistories?.value?.filter((h: any) => h.status === 'sent')
-                  .length || 0) /
-                  (history.reminderHistories?.value?.length || 1)) *
-                  100,
-              )
-            }}%
+
+        <!-- Stats Content - Expandable -->
+        <div v-show="isStatsExpanded" class="stats-panel-content">
+          <div class="history-stats-header">
+            <div class="stats-card">
+              <div class="stats-label">Total</div>
+              <div class="stats-value">{{ totalReminders }}</div>
+            </div>
+            <div class="stats-card">
+              <div class="stats-label">Sent</div>
+              <div class="stats-value stats-success">
+                {{ sentCount }}
+              </div>
+            </div>
+            <div class="stats-card">
+              <div class="stats-label">Failed</div>
+              <div class="stats-value stats-error">
+                {{ failedCount }}
+              </div>
+            </div>
+            <div class="stats-card">
+              <div class="stats-label">Pending</div>
+              <div class="stats-value stats-pending">
+                {{ pendingCount }}
+              </div>
+            </div>
+            <div v-if="totalReminders > 0" class="stats-card stats-rate">
+              <div class="stats-label">Success Rate</div>
+              <div class="stats-value stats-rate-value">
+                {{ successRate }}%
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -227,8 +265,16 @@ onMounted(async () => {
                       <option value="pending">Pending</option>
                     </select>
                   </td>
-                  <td class="col-subject filter-cell"></td>
-                  <td class="col-date filter-cell"></td>
+                  <td class="col-subject filter-cell">
+                    <input
+                      v-model="filterHistorySubject"
+                      type="text"
+                      placeholder="Search subject..."
+                      class="filter-input-inline"
+                    />
+                  </td>
+                  <td class="col-date filter-cell">
+                  </td>
                   <td class="col-action filter-cell">
                     <button
                       @click="refreshHistory"
@@ -271,32 +317,32 @@ onMounted(async () => {
               </tbody>
             </table>
           </div>
-          <div class="table-pagination-controls" v-if="historyTotalPages > 1">
-            <span class="pagination-info-text">
-              Page {{ historyPage }} of {{ historyTotalPages }} ({{
-                filteredReminderHistories.length
-              }}
-              total)
-            </span>
-            <div class="pagination-buttons">
-              <button
-                @click="prevHistoryPage"
-                class="pagination-btn"
-                :disabled="historyPage === 1"
-                title="Previous page"
-              >
-                ← Prev
-              </button>
-              <button
-                @click="nextHistoryPage"
-                class="pagination-btn"
-                :disabled="historyPage === historyTotalPages"
-                title="Next page"
-              >
-                Next →
-              </button>
-            </div>
-          </div>
+           <div class="table-pagination-controls" v-if="filteredReminderHistories.length > itemsPerPage">
+             <span class="pagination-info-text">
+               Page {{ historyPage }} of {{ historyTotalPages }} ({{
+                 filteredReminderHistories.length
+               }}
+               total)
+             </span>
+             <div class="pagination-buttons">
+               <button
+                 @click="prevHistoryPage"
+                 class="pagination-btn"
+                 :disabled="historyPage === 1"
+                 title="Previous page"
+               >
+                 ← Prev
+               </button>
+               <button
+                 @click="nextHistoryPage"
+                 class="pagination-btn"
+                 :disabled="historyPage === historyTotalPages"
+                 title="Next page"
+               >
+                 Next →
+               </button>
+             </div>
+           </div>
         </div>
       </div>
     </div>
