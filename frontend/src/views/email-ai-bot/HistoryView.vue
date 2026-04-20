@@ -317,7 +317,7 @@ onMounted(async () => {
               </tbody>
             </table>
           </div>
-           <div class="table-pagination-controls" v-if="filteredReminderHistories.length > itemsPerPage">
+           <div class="table-pagination-controls">
              <span class="pagination-info-text">
                Page {{ historyPage }} of {{ historyTotalPages }} ({{
                  filteredReminderHistories.length
@@ -336,7 +336,7 @@ onMounted(async () => {
                <button
                  @click="nextHistoryPage"
                  class="pagination-btn"
-                 :disabled="historyPage === historyTotalPages"
+                 :disabled="historyPage === historyTotalPages || filteredReminderHistories.length == 0"
                  title="Next page"
                >
                  Next →
