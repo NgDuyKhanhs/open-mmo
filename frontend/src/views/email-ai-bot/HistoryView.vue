@@ -18,7 +18,7 @@ const props = defineProps<{
 }>()
 
 // Modal states
-const historyDetailModal = ref<ReminderHistory | null>(null)
+const historyDetailModal = computed(() => history.historyDetailModal.value)
 
 // Filter states
 const filterHistoryStatus = ref('')
@@ -123,13 +123,7 @@ const copyToClipboard = (text: string) => {
 
 // View detail
 const viewReminderHistoryDetail = async (hist: ReminderHistory) => {
-  try {
-    const fullDetail = await history.viewReminderHistoryDetail(hist)
-    historyDetailModal.value = fullDetail
-  } catch (err) {
-    console.error('Failed to fetch full detail:', err)
-    toast.error('Failed to load reminder details')
-  }
+  await history.viewReminderHistoryDetail(hist)
 }
 
 // Pagination
@@ -180,7 +174,7 @@ onMounted(async () => {
               class="stats-chevron"
               :class="{ expanded: isStatsExpanded }"
             />
-            <h4 class="stats-panel-title">History Stats</h4>
+            <h4 class="stats-panel-title">Summary</h4>
           </div>
           <div v-if="!isStatsExpanded" class="stats-summary">
             <span class="summary-item">Total: {{ totalReminders }}</span>
@@ -349,54 +343,61 @@ onMounted(async () => {
 
     <!-- Detail Modal -->
     <div v-if="historyDetailModal" class="modal-overlay">
-      <div class="modal-container modal-detail">
-        <div class="modal-header">
-          <h3 class="modal-title">Reminder History Detail</h3>
-          <button @click="historyDetailModal = null" class="close-button">
-            <X :size="18" />
+      <div class="modal-container modal-detail history-detail-modal">
+        <div class="modal-header history-detail-header">
+          <div class="header-title-section">
+            <h3 class="modal-title"></h3>
+          </div>
+          <button @click="history.historyDetailModal.value = null" class="close-button">
+            <X :size="20" />
           </button>
         </div>
 
-        <div class="modal-content">
-          <div class="detail-section">
-            <h4 class="detail-title">Summary</h4>
-            <div class="detail-item">
-              <span class="detail-label">Contact:</span>
-              <span class="detail-value">{{ historyDetailModal.contactEmail }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Status:</span>
-              <span class="detail-value" :class="historyDetailModal.status">{{
-                historyDetailModal.status
-              }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Sent At:</span>
-              <span class="detail-value">{{ formatHistoryDate(historyDetailModal.sentAt) }}</span>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <h4 class="detail-title">Email Content</h4>
-            <div class="detail-item">
-              <span class="detail-label">Subject:</span>
-              <span class="detail-value">{{ historyDetailModal.subject }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Message Preview:</span>
-              <span class="detail-value">{{ historyDetailModal.bodyPreview }}</span>
+        <div class="modal-content history-detail-content">
+          <!-- Status Badge & Contact Section -->
+          <div class="detail-card status-card">
+            <div class="card-content-row">
+              <div class="card-section">
+                <span class="detail-label">Contact</span>
+                <p class="detail-value contact-value">{{ historyDetailModal.contactEmail }}</p>
+              </div>
+              <div class="card-section">
+                <span class="detail-label">Status</span>
+                <span :class="['status-badge-large', historyDetailModal.status, `status-${historyDetailModal.status}`]">
+                  {{ historyDetailModal.status }}
+                </span>
+              </div>
+              <div class="card-section">
+                <span class="detail-label">Sent Time</span>
+                <p class="detail-value time-value">{{ formatHistoryDate(historyDetailModal.sentAt) }}</p>
+                <p class="detail-timestamp">{{ getFullTimestamp(historyDetailModal.sentAt) }}</p>
+              </div>
             </div>
           </div>
 
-          <div class="detail-actions">
-            <button
-              @click="copyToClipboard(historyDetailModal.bodyPreview)"
-              class="btn btn-primary"
-            >
-              Copy Content
-            </button>
-            <button @click="historyDetailModal = null" class="btn btn-secondary">Close</button>
+          <!-- Email Content Section -->
+          <div class="detail-card content-card">
+            <div class="card-header1">
+              <h4 class="card-title1">Email Content</h4>
+            </div>
+            <div class="card-divider"></div>
+
+            <div class="card-section">
+              <span class="detail-label">Subject</span>
+              <p class="detail-value subject-value">{{ historyDetailModal.subject || '(No subject)' }}</p>
+            </div>
+
+            <div class="card-section message-section">
+              <div class="section-header">
+                <span style="margin-top: 12px" class="detail-label">Message Body</span>
+              </div>
+              <div class="message-preview">
+                {{ historyDetailModal.body || '(No message content)' }}
+              </div>
+            </div>
           </div>
+
+
         </div>
       </div>
     </div>

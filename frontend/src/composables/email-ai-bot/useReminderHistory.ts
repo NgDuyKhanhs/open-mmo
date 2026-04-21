@@ -56,12 +56,14 @@ export function useReminderHistory() {
 
   const viewReminderHistoryDetail = async (history: ReminderHistory) => {
     try {
-      if (!authStore.accessToken) return
+      if (!authStore.accessToken) return null
       const fullDetail = await getReminderHistoryDetail(authStore.accessToken, history.id)
       historyDetailModal.value = fullDetail
+      return fullDetail
     } catch (err) {
       console.error('Failed to fetch full detail:', err)
       toast.error('Failed to load reminder details')
+      return null
     }
   }
 

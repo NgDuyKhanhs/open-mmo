@@ -20,6 +20,10 @@ const filteredEmails = computed(() => {
   return mailbox.emails.value.filter(email => email.subject.toLowerCase().includes(keyword))
 })
 
+const currentPageNumber = computed(() => {
+  return mailbox.currentPageIndex.value + 1
+})
+
 onMounted(async () => {
   if (props.gmailStatus?.connected) {
     await mailbox.loadEmails()
@@ -77,22 +81,28 @@ onMounted(async () => {
     </div>
 
      <div v-if="(mailbox.currentPageIndex.value > 0 || mailbox.hasNextPage.value) && mailbox.emails.value.length > 0" class="pagination-controls">
-      <button
-        @click="mailbox.loadPreviousPage()"
-        class="pagination-btn"
-        :disabled="mailbox.isLoading.value || mailbox.currentPageIndex.value <= 0"
-      >
-        ← Previous
-      </button>
-      <div class="pagination-spacer"></div>
-      <button
-        @click="mailbox.loadNextPage()"
-        class="pagination-btn"
-        :disabled="mailbox.isLoading.value || !mailbox.hasNextPage.value"
-      >
-        Next →
-      </button>
-    </div>
+       <div class="pagination-info">
+         <span class="pagination-info-text">
+           Page {{ currentPageNumber }} • {{ filteredEmails.length }} emails
+         </span>
+       </div>
+       <div class="pagination-buttons-group">
+         <button
+           @click="mailbox.loadPreviousPage()"
+           class="pagination-btn"
+           :disabled="mailbox.isLoading.value || mailbox.currentPageIndex.value <= 0"
+         >
+           ← Previous
+         </button>
+         <button
+           @click="mailbox.loadNextPage()"
+           class="pagination-btn"
+           :disabled="mailbox.isLoading.value || !mailbox.hasNextPage.value"
+         >
+           Next →
+         </button>
+       </div>
+     </div>
 
     <!-- Email Preview Modal -->
     <div v-if="showEmailPreviewModal && mailbox.selectedEmail.value" class="modal-overlay">
